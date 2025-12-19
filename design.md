@@ -18,14 +18,30 @@ This is the C++ part. Each broker manages exactly one log partition. We start wi
 	- metadata
 - Segment class
 	- This is the file I/O class
-	- reads in thread safe way from the log and index file (use `pread`).
+	- reads in thread safe way from the log and index file (use `pread`, later also allow `sendfile`).
 	- writes to the log file and index file
-	- holds filename, file dir, file size, maybe current offset (or current offset should be in log class, this seems to make more sense)
+	- holds filename, file dir, file size, maybe current offset (or current offset should be in log class, this seems to make more sense) and also base offset (for determining file names)
 	- maybe index as separate class, where we put it inside the segment class
 	- Need to track state (active vs sealed)
 		- For active segments need to track published offset, i.e. readers can only read up to here, and published size
 			- Need to be careful here, should use atomics and acquire-release semantics
 		- For sealed segments we can allow reading everything
+		- Maybe also recovering state
+	- Need to do checksums so that data integrity can be verified, there should also be a method that does the verifying and truncates the result up to the last valid record. Verify only active segments and during recovery.
+- Index class
+	- Manages the index files, i.e. the map of an offset to the file position in the log file, this is encoded as pair of 64 bit unsigned int and 32 bit unsigned int.
+	- It is probably fastest to do some kind of binary search to determine file position of given offset
+		- But should first compare if the given offset is larger than largest offset in index file
+		- Do as follows:
+			- Left pointer at file start
+			- Right pointer 12 bytes before EOF
+			- Read 8 bytes to determine offset
+			- Compare offset with given offset
+				- If found read next 4 bytes and return these
+			- So `R-L` should always be divisible by 12. So the new pointer should be moved to `L + 12*((R-L)/24)`
+		- It might be smart to have an atomic for the file size here. We want to read 12 bytes before EOF, but if one thread reads while another writes EOF might not be well defined.
+	
+
 
 
 ### Log partition
