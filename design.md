@@ -13,6 +13,20 @@ This is the C++ part. Each broker manages exactly one log partition. We start wi
 	- Calls `write()/append()` from the active segment
 	- Monitors which segment is active
 	- Monitors if the active segment is full, closes it and rotates
+		- When rotating or recovering need to block all threads from reading and writing
+		- One idea to do this is by having an atomic bool `canReadWrite` and if false, all threads have to wait.
+		- At the same time we would need an atomic counter of reading threads.
+		- So `rotate` would set `canReadWrite` to false and then wait for counter of reading threads to equal zero
+		- This would entail that before every `fetch` call we wait for `canReadWrite` to be true, then right before the call increase the counter and after returning we decrease it again.
+		- The write thread is irrelevant, since this threads calls `rotate` after writing and checking if segment has reached maximum size.
+		- What does rotation entail?
+			- Index
+				- Clear the memory cache
+				- `mmap` the index file and save the base offset.
+			- Log File
+				- Close the file.
+				- Move the segment to the vector holding the sealed segments
+				- On new construction open the file as read-only
 	- deletion of old segments?
 	- crash recovery
 	- metadata
@@ -40,7 +54,10 @@ This is the C++ part. Each broker manages exactly one log partition. We start wi
 				- If found read next 4 bytes and return these
 			- So `R-L` should always be divisible by 12. So the new pointer should be moved to `L + 12*((R-L)/24)`
 		- It might be smart to have an atomic for the file size here. We want to read 12 bytes before EOF, but if one thread reads while another writes EOF might not be well defined.
-	
+	- Might need to differentiate between index files of active and sealed segments
+		- Index files of sealed segments can be mmapped and searched.
+		- Index files of active segments need to keep their data in memory for reading.
+	- Might have to handle partial writes, either if write was succesful but not whole buffer written or if there was an interrupt (check errno)
 
 
 

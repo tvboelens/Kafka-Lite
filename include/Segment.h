@@ -2,6 +2,7 @@
 #define SEGMENT_H
 
 #include <atomic>
+#include <filesystem>
 #include <future>
 #include <string>
 #include <vector>
@@ -13,14 +14,12 @@ enum class SegmentState {
 	Active
 };
 
-struct IndexFileEntry
-{
+struct IndexFileEntry {
 	uint64_t offset;
 	uint32_t file_position;
 };
 
-struct FetchResult
-{
+struct FetchResult {
 	int fd;
 	int64_t offset;
 	int64_t length;
@@ -28,41 +27,50 @@ struct FetchResult
 	std::vector<uint8_t> result_buf;
 };
 
-class Index
-{
+class Index {
 	public:
-		Index();
-		IndexFileEntry determineLogFileOffset(uint64_t offset);
+		Index(const std::filesystem::path &dir, uint64_t base_offset, SegmentState state);
+		~Index();
+		IndexFileEntry determineClosestIndex(uint64_t offset);
 		void append(const IndexFileEntry &entry);
+		SegmentState state_;
 	private:
+		IndexFileEntry binarySearch(uint64_t offset, const char *buf, uint64_t file_size);
+		//IndexFileEntry binarySearchFromVector(uint64_t offset);
+		std::filesystem::path dir_;
+		const char *mmap_base_offset_;
+		std::vector<uint8_t> data_;
 		int fd_;
 		std::atomic<uint64_t> published_size;
 };
 
-class Segment
-{
+class Segment {
 	public:
-		Segment(/* args */);
+		Segment(const std::filesystem::path &dir, uint64_t base_offset, uint64_t max_size, SegmentState state);
+		Segment(const std::filesystem::path &dir, uint64_t base_offset, uint64_t published_offset, uint64_t max_size, SegmentState state);
 		~Segment();
 
 		FetchResult read(uint64_t offset, size_t max_bytes); // args
 		uint64_t append(const uint8_t *data, uint32_t len);
+		uint64_t getBaseOffset() { return base_offset_; };
+		uint64_t getPublishedOffset() { return published_offset_.load(std::memory_order_acquire); }
 		void flush();
-		void close();
 		void seal();
 
 		bool isFull();
-		SegmentState state;
 	private:
+		void init();
 		void verifyDataIntegrity(FetchResult &result);
 		uint32_t determineFilePosition(uint64_t offset);
 		uint32_t determineFilePosition(uint64_t offset, const IndexFileEntry &entry);
+
+		SegmentState state_;
 		int log_fd_;
-		Index index_file;
-		std::string dir;
-		std::atomic<uint64_t> published_offset; // public?
-		std::atomic<uint64_t> published_size; // public?
-		uint64_t max_size_;
+		Index index_file_;
+		std::filesystem::path dir_;
+		std::atomic<uint64_t> published_offset_; // public?
+		std::atomic<uint64_t> published_size_; // public?
+		uint64_t max_size_, base_offset_;
 };
 
 #endif
