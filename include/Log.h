@@ -16,9 +16,8 @@ class Log
 	public:
 		Log(/* args */);
 		~Log();
-		FetchResult read(const FetchRequest &request);
+		FetchResult fetch(const FetchRequest &request);
 		uint64_t append(const AppendJob &job);
-		void write() {};
 		void rollover();
 
 	private:

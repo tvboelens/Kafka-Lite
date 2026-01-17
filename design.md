@@ -9,24 +9,17 @@ This is the C++ part. Each broker manages exactly one log partition. We start wi
 	- Reading also 
 - Log class
 	- Owns the segments
-	- Fetches an event from the correct segment
+	- Fetches a record from the correct segment
 	- Calls `write()/append()` from the active segment
 	- Monitors which segment is active
 	- Monitors if the active segment is full, closes it and rotates
-		- When rotating or recovering need to block all threads from reading and writing
-		- One idea to do this is by having an atomic bool `canReadWrite` and if false, all threads have to wait.
-		- At the same time we would need an atomic counter of reading threads.
-		- So `rotate` would set `canReadWrite` to false and then wait for counter of reading threads to equal zero
-		- This would entail that before every `fetch` call we wait for `canReadWrite` to be true, then right before the call increase the counter and after returning we decrease it again.
-		- The write thread is irrelevant, since this threads calls `rotate` after writing and checking if segment has reached maximum size.
-		- What does rotation entail?
-			- Index
-				- Clear the memory cache
-				- `mmap` the index file and save the base offset.
-			- Log File
-				- Close the file.
-				- Move the segment to the vector holding the sealed segments
-				- On new construction open the file as read-only
+		- main method here is `rollover()`
+		- We use atomic shared pointer for active segment (need `gcc` compiler or more precisely `gcc libstdc++` for this).
+		- We create a new segment `previous_active_segment` with sealed status, which opens the log and index file of the active segment in read-only mode.
+		- We create a new segment that starts at the next offset in active mode.
+		- Then we first add `previous_active_segment` to the vector of sealed segments so that future reading threads only read from here.
+		- Then we atomically swap the new segment with the active segment.
+		- The old active segment can simply go out of scope, since outside of `rollover()` only old reading threads hold a shared pointer to it, hence if all reading threads are ready the destructor will clean it up.
 	- deletion of old segments?
 	- crash recovery
 	- metadata

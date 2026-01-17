@@ -7,6 +7,11 @@
 #include <cstring>
 #include <limits>
 
+#define INDEX_ENTRY_SIZE 12
+#define OFFSET_SIZE 8
+#define SEGMENT_HEADER_SIZE 4
+#define FILE_POS_INDEX_SIZE 4
+
 constexpr bool is_big_endian() {
 	return std::endian::native == std::endian::big;
 }
@@ -35,7 +40,16 @@ bool write_u32_le(int fd, u_int32_t value) {
 	if (is_big_endian())
 		value = byteswap32(value);
 
-	ssize_t bytes_written = write(fd, &value, sizeof(value));
+	ssize_t curr_write, bytes_written = 0;
+	while (bytes_written < sizeof(value)) {
+		curr_write = write(fd, &value + bytes_written, sizeof(value)-bytes_written);
+		if (curr_write < 0) {
+			if (errno == EINTR) continue;
+			break;
+		}
+		if (curr_write == 0) break;
+		bytes_written += curr_write;
+	}
 	return bytes_written == sizeof(value);
 }
 
@@ -44,7 +58,20 @@ bool write_u64_le(int fd, u_int64_t value)
 	if (is_big_endian())
 		value = byteswap64(value);
 
-	ssize_t bytes_written = write(fd, &value, sizeof(value));
+	ssize_t curr_write, bytes_written = 0;
+	while (bytes_written < sizeof(value))
+	{
+		curr_write = write(fd, &value + bytes_written, sizeof(value) - bytes_written);
+		if (curr_write < 0)
+		{
+			if (errno == EINTR)
+				continue;
+			break;
+		}
+		if (curr_write == 0)
+			break;
+		bytes_written += curr_write;
+	}
 	return bytes_written == sizeof(value);
 }
 
@@ -107,7 +134,6 @@ void Segment::init() {
 }
 
 Segment::~Segment() {
-	index_file_.~Index();
 	if (log_fd_ != 1)
 		::close(log_fd_);
 }
@@ -154,10 +180,19 @@ FetchResult Segment::read(uint64_t offset, size_t max_bytes)
 
 	// use pread for thread safety
 	result.result_buf.resize(len);
-	size_t bytes_read = 0;
+	size_t curr_read, bytes_read = 0;
 	while (bytes_read < len) {
-		bytes_read += pread(log_fd_, result.result_buf.data()+bytes_read, len-bytes_read, offset_file_position+bytes_read);
+		curr_read = pread(log_fd_, result.result_buf.data()+bytes_read, len-bytes_read, offset_file_position+bytes_read);
+		if (curr_read < 0) {
+			if (errno == EINTR) continue;
+			break;
+		}
+		if (curr_read == 0) break;
+		bytes_read += curr_read;
 	}
+
+	if (bytes_read < len)
+		throw std::ios_base::failure("Failed to read offset from log file.");
 
 	if (state_ == SegmentState::Active)
 		verifyDataIntegrity(result);
@@ -180,7 +215,21 @@ uint64_t Segment::append(const uint8_t *data, uint32_t len)
 	/*
 		Future feature: Create and write checksum -> use crc32, there should be libraries that do this (boost::crc?)
 	*/
-	uint64_t bytes_written = write(log_fd_, data, len);
+
+	uint64_t curr_write, bytes_written = 0;
+	while (bytes_written < len) {
+		curr_write = write(log_fd_, data, len-bytes_written);
+		if (curr_write < 0) {
+			if (errno == EINTR) continue;
+			break;
+		}
+		if (curr_write == 0) break;
+		bytes_written += curr_write;
+		data += curr_write;
+	}
+
+	if (bytes_written < len)
+		throw std::ios_base::failure("Failed to write data to log file.");
 
 	// Increase published offset in thread safe way and write to index file
 	uint64_t offset = published_offset_.fetch_add(1, std::memory_order_release);
@@ -193,23 +242,32 @@ uint64_t Segment::append(const uint8_t *data, uint32_t len)
 	return offset;
 }
 
-uint32_t Segment::determineFilePosition(uint64_t offset){
+uint32_t Segment::determineFilePosition(uint64_t offset) {
 	IndexFileEntry entry = index_file_.determineClosestIndex(offset);
 	return determineFilePosition(offset, entry);
 }
 
-uint32_t Segment::determineFilePosition(uint64_t offset, const IndexFileEntry &entry)
-{
+uint32_t Segment::determineFilePosition(uint64_t offset, const IndexFileEntry &entry) {
 	uint64_t current_offset = entry.offset;
-	uint32_t len, current_file_pos = entry.file_position;
+	uint32_t record_len, current_file_pos = entry.file_position;
 	while (current_offset < offset) {
 		++current_offset;
-		size_t bytes_read = pread(log_fd_, &len, 4, current_file_pos);
-		if (bytes_read != 4)
+		size_t curr_read, bytes_read = 0;
+		while (bytes_read < FILE_POS_INDEX_SIZE) {
+			curr_read = pread(log_fd_, &record_len + bytes_read, FILE_POS_INDEX_SIZE - bytes_read, current_file_pos + bytes_read);
+			if (curr_read < 0) {
+				if (errno == EINTR) continue;
+				break;
+			}
+			if (curr_read == 0) break;
+			bytes_read += curr_read;
+		}
+
+		if (bytes_read != FILE_POS_INDEX_SIZE)
 			throw std::ios_base::failure("Failed to read length bytes from log file.");
 		if (is_big_endian())
-			len = byteswap32(len);
-		current_file_pos += len + 4; // Later + 8 if we include the checksum
+			record_len = byteswap32(record_len);
+		current_file_pos += record_len + SEGMENT_HEADER_SIZE;
 	}
 	return current_file_pos;
 }
@@ -242,10 +300,9 @@ Index::Index(const std::filesystem::path &dir, uint64_t base_offset, SegmentStat
 		flags = O_RDONLY;
 		mode = 0;
 	}
-	do
-	{
+	do {
 		fd_ = open(log_file.c_str(), flags, mode);
-	} while (fd_ == 1 && errno == EINTR);
+	} while (fd_ == -1 && errno == EINTR);
 
 	if (fd_ == -1)
 		throw std::ios_base::failure("Failed to open index file.");
@@ -290,23 +347,23 @@ void Index::append(const IndexFileEntry &data) {
 	if (!write_u32_le(fd_, data.file_position))
 		throw std::ios_base::failure("Failed to write file position to index file.");
 
-	uint64_t size = published_size.fetch_add(12, std::memory_order_release);
+	uint64_t size = published_size.fetch_add(INDEX_ENTRY_SIZE, std::memory_order_release);
 }
 
 IndexFileEntry Index::binarySearch(uint64_t offset, const char *buf, uint64_t file_size) {
 	// Entries have 12 bytes, 8 for the offset and 4 for the file position
 	IndexFileEntry entry;
-	uint64_t current_offset, L_pos = 0, R_pos = file_size-12, diff = file_size/12-1;
+	uint64_t current_offset, L_pos = 0, R_pos = file_size-INDEX_ENTRY_SIZE, diff = file_size/INDEX_ENTRY_SIZE-1;
 	const char *L = buf;
-	const char *R = L + file_size - 12;
+	const char *R = L + file_size - INDEX_ENTRY_SIZE;
 
 	// Check if the offset we are seeking is indexed at the start or end
-	std::memcpy(&current_offset, L, 8);
+	std::memcpy(&current_offset, L, OFFSET_SIZE);
 	if (is_big_endian())
 		current_offset = byteswap64(current_offset);
 	if (current_offset == offset) {
 		entry.offset = current_offset;
-		std::memcpy(&entry.file_position, L + 8, sizeof(entry.file_position));
+		std::memcpy(&entry.file_position, L + OFFSET_SIZE, sizeof(entry.file_position));
 		if (is_big_endian())
 			entry.file_position = byteswap32(entry.file_position);
 		return entry;
@@ -317,7 +374,7 @@ IndexFileEntry Index::binarySearch(uint64_t offset, const char *buf, uint64_t fi
 		current_offset =  byteswap64(current_offset);
 	if (current_offset == offset) {
 		entry.offset = current_offset;
-		std::memcpy(&entry.file_position, R + 8, sizeof(entry.file_position));
+		std::memcpy(&entry.file_position, R + OFFSET_SIZE, sizeof(entry.file_position));
 		if (is_big_endian())
 			entry.file_position = byteswap32(entry.file_position);
 		return entry;
@@ -326,14 +383,14 @@ IndexFileEntry Index::binarySearch(uint64_t offset, const char *buf, uint64_t fi
 	// If not, do binary search
 	const char *M;
 	while (L < R) {
-		M = L + 12 * (diff / 2);
+		M = L + INDEX_ENTRY_SIZE * (diff / 2);
 		std::memcpy(&current_offset, M, sizeof(current_offset));
 		if (is_big_endian())
 			current_offset = byteswap64(current_offset);
 		if (current_offset < offset)
 		{
 			L = M;
-			R -= 12;
+			R -= INDEX_ENTRY_SIZE;
 			diff -= (diff / 2 + 1);
 		}
 		else if (current_offset > offset) {
@@ -347,7 +404,7 @@ IndexFileEntry Index::binarySearch(uint64_t offset, const char *buf, uint64_t fi
 	}
 
 	entry.offset = current_offset;
-	std::memcpy(&entry.file_position, M + 8, 4);
+	std::memcpy(&entry.file_position, M + OFFSET_SIZE, FILE_POS_INDEX_SIZE);
 	if (is_big_endian())
 		entry.file_position = byteswap32(entry.file_position);
 	return entry;

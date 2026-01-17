@@ -50,7 +50,7 @@ class Segment {
 		Segment(const std::filesystem::path &dir, uint64_t base_offset, uint64_t published_offset, uint64_t max_size, SegmentState state);
 		~Segment();
 
-		FetchResult read(uint64_t offset, size_t max_bytes); // args
+		FetchResult read(uint64_t offset, size_t max_bytes);
 		uint64_t append(const uint8_t *data, uint32_t len);
 		uint64_t getBaseOffset() { return base_offset_; };
 		uint64_t getPublishedOffset() { return published_offset_.load(std::memory_order_acquire); }
