@@ -1,11 +1,44 @@
 # kafka-lite
 ## Description
-This project aims to build a mini version of Apache Kafka. The broker will be written in C++ and the other parts will be written in Go. I started this project since I wanted expand my skills in Go and at the same time learn systems programming in C++.
+kafka-lite is an exploratory systems programming project inspired by Apache Kafka.
+The goal is to implement a minimal broker in order to better understand the design
+and trade-offs of log-based storage, concurrency, and disk-backed systems.
 
-### Features
-As of now only the storage engine of the broker has been (at least partly) implemented. Just like Kafka this uses an append-only log that is divided into segments. The log has the following features:
-- Multiple reader threads and a single writer thread. 
-- For faster lookup the log comes equipped with an index and for sealed segments (i.e. read-only) I use `mmap` on the index for faster reading. 
-- The segment rollover logic is fully implemented.
+The broker is written in C++, with supporting components (producer/consumer clients, controllers) planned in Go.
 
-The next step will be testing (using GoogleTest) the storage engine. After that the goal will be to first build the BrokerCore component that manages the read and write threads and finally the network layer.
+## Current Status
+The project is in an early stage. At present, only the storage engine of the broker
+has been (partially) implemented. The focus so far has been on correctness and data
+layout rather than feature completeness or performance tuning.
+
+## Implemented components
+### Log Storage Engine
+
+The storage engine is based on an append-only log divided into segments.
+
+Current features include:
+- Append-only log with segmented files and rollover logic
+- Support for multiple concurrent reader threads and a single writer thread
+- Per-segment index for faster offset lookup
+- Memory-mapped (`mmap`) index files for sealed (read-only) segments
+
+### Concurrency Model
+The storage engine supports multiple concurrent readers and a single writer.
+Concurrency is managed primarily using atomics with acquire–release semantics,
+minimizing the use of mutexes. No guarantees of lock-freedom are made; the focus
+is on correctness and clear reasoning about memory visibility and ordering.
+
+
+## Design Focus
+This project prioritizes:
+- Clear concurrency design (single writer, multiple readers)
+- Explicit handling of on-disk data layout
+- Reasoning about ordering guarantees and correctness
+
+Performance optimization and fault tolerance are considered out of scope for now.
+
+## Next Steps
+- Add unit tests for the storage engine using GoogleTest
+- Refine edge cases and correctness guarantees
+- Implement the broker core responsible for managing reader and writer threads
+- Add a minimal TCP-based network layer for client communication using asynchronous I/O (planned with Boost.Asio)
