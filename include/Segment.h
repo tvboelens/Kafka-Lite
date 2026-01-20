@@ -3,11 +3,7 @@
 
 #include <atomic>
 #include <filesystem>
-#include <future>
-#include <string>
 #include <vector>
-
-#include "./AppendQueue.h"
 
 enum class SegmentState { Sealed, Active };
 

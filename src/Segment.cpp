@@ -3,6 +3,7 @@
 #include <bit>
 #include <cstdint>
 #include <cstring>
+#include <string>
 #include <fcntl.h>
 #include <filesystem>
 #include <limits>
@@ -228,7 +229,7 @@ uint64_t Segment::append(const uint8_t *data, uint32_t len) {
 
     // Increase published offset in thread safe way and write to index file
     uint64_t offset;
-    if (empty_.exchange(true, std::memory_order_acq_rel)) {
+    if (empty_.exchange(false, std::memory_order_acq_rel)) {
         offset = base_offset_;
         published_offset_.store(offset, std::memory_order_release);
     }

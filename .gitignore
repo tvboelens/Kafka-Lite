@@ -42,7 +42,11 @@
 
 #VS Code
 .vscode
+build
 
 #clangd
 .cache
 .clang-format
+
+#notes
+kafka_notes.md
