@@ -42,3 +42,7 @@
 
 #VS Code
 .vscode
+
+#clangd
+.cache
+.clang-format
