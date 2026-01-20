@@ -11,11 +11,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define INDEX_ENTRY_SIZE 12
-#define OFFSET_SIZE 8
-#define SEGMENT_HEADER_SIZE 4
-#define FILE_POS_INDEX_SIZE 4
-
 constexpr bool is_big_endian() {
     return std::endian::native == std::endian::big;
 }

@@ -5,6 +5,11 @@
 #include <filesystem>
 #include <vector>
 
+#define INDEX_ENTRY_SIZE 12
+#define OFFSET_SIZE 8
+#define SEGMENT_HEADER_SIZE 4
+#define FILE_POS_INDEX_SIZE 4
+
 enum class SegmentState { Sealed, Active };
 
 struct IndexFileEntry {
