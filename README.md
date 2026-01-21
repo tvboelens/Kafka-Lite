@@ -6,6 +6,11 @@ and trade-offs of log-based storage, concurrency, and disk-backed systems.
 
 The broker is written in C++, with supporting components (producer/consumer clients, controllers) planned in Go.
 
+## Prerequisites
+- C++ 20
+- CMake 3.16
+- Compiling must be done with gcc compiler, since other compilers don't support atomic swaps for shared pointers (use the appropriate values for the `CMAKE_C_COMPILER` and `CMAKE_CXX_COMPILER` flags)
+
 ## Current Status
 The project is in an early stage. At present, only the storage engine of the broker
 has been (partially) implemented. The focus so far has been on correctness and data
