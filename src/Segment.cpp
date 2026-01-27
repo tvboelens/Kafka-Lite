@@ -3,7 +3,6 @@
 #include <bit>
 #include <cstdint>
 #include <cstring>
-#include <string>
 #include <fcntl.h>
 #include <filesystem>
 #include <limits>
@@ -74,7 +73,7 @@ bool write_u64_le(int fd, u_int64_t value) {
 Segment::Segment(const std::filesystem::path &dir, uint64_t base_offset,
                  uint64_t max_size, SegmentState state)
     : dir_(dir), base_offset_(base_offset), max_size_(max_size), log_fd_(-1),
-      state_(state), empty_(true), published_size_(0), published_offset_(base_offset),
+      state_(state), published_size_(0), published_offset_(base_offset),
       index_file_(dir, base_offset, state) {
     init();
 }
@@ -83,7 +82,7 @@ Segment::Segment(const std::filesystem::path &dir, uint64_t base_offset,
                  uint64_t published_offset, uint64_t max_size,
                  SegmentState state)
     : dir_(dir), base_offset_(base_offset), max_size_(max_size), log_fd_(-1),
-      state_(state), empty_(false), published_size_(0), published_offset_(published_offset),
+      state_(state), published_size_(0), published_offset_(published_offset),
       index_file_(dir, base_offset, state) {
     init();
 }
@@ -91,7 +90,7 @@ Segment::Segment(const std::filesystem::path &dir, uint64_t base_offset,
 void Segment::init() {
     // maybe check if published offset < base offset and throw exception if true
     std::string filename = std::to_string(base_offset_) + ".log";
-    std::filesystem::create_directory(dir_);
+    std::filesystem::create_directories(dir_);
     std::filesystem::path log_file = dir_.append(filename);
     mode_t mode;
     int flags, rc;
@@ -129,7 +128,8 @@ FetchResult Segment::read(uint64_t offset, size_t max_bytes) {
              pub_offset = published_offset_.load(std::memory_order_acquire),
              segment_size = published_size_.load(std::memory_order_acquire);
 
-    if (offset > pub_offset || empty_.load(std::memory_order_acquire))
+    if (offset > pub_offset ||
+        published_size_.load(std::memory_order_acquire) == 0)
         return {}; // May need to be changed if I want to use sendfile() in the
                    // future
 
@@ -224,19 +224,18 @@ uint64_t Segment::append(const uint8_t *data, uint32_t len) {
 
     // Increase published offset in thread safe way and write to index file
     uint64_t offset;
-    if (empty_.exchange(false, std::memory_order_acq_rel)) {
+    if (published_size_.load(std::memory_order_acquire) == 0) {
         offset = base_offset_;
         published_offset_.store(offset, std::memory_order_release);
-    }
-    else
-        offset = published_offset_.fetch_add(1, std::memory_order_release);
+    } else
+        offset = published_offset_.fetch_add(1, std::memory_order_release) + 1;
     IndexFileEntry index_data;
     index_data.offset = offset;
     index_data.file_position = static_cast<uint32_t>(pos);
     index_file_.append(index_data);
 
     uint64_t new_size = published_size_.fetch_add(
-        bytes_written + sizeof(u_int32_t), std::memory_order_release);
+        bytes_written + SEGMENT_HEADER_SIZE, std::memory_order_release);
     return offset;
 }
 
@@ -289,7 +288,7 @@ Index::Index(const std::filesystem::path &dir, uint64_t base_offset,
              SegmentState state)
     : dir_(dir), published_size(0), fd_(-1), state_(state) {
     std::string filename = std::to_string(base_offset) + ".index";
-    std::filesystem::create_directory(dir);
+    std::filesystem::create_directories(dir);
     std::filesystem::path log_file = dir_.append(filename);
     mode_t mode;
     int flags;

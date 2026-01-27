@@ -75,7 +75,6 @@ class Segment {
     int log_fd_;
     Index index_file_;
     std::filesystem::path dir_;
-    std::atomic_bool empty_;
     std::atomic<uint64_t> published_offset_; // public?
     std::atomic<uint64_t> published_size_;   // public?
     uint64_t max_size_, base_offset_;

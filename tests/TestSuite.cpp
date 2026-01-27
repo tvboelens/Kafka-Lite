@@ -9,10 +9,12 @@ class BrokerLibTests : public ::testing::Test {
     std::filesystem::path dir_;
 
   public:
-    void setDir(const std::filesystem::path &dir) {dir_ = dir;}
+    std::filesystem::path getDir() { return dir_; }
+
   protected:
-    void SetUp() override {};
-    void TearDown() override;
+    void SetUp() override{
+        dir_ = std::filesystem::current_path() /
+                                    "Segment";} void TearDown() override;
 };
 
 void BrokerLibTests::TearDown() {
@@ -20,8 +22,7 @@ void BrokerLibTests::TearDown() {
 }
 
 TEST_F(BrokerLibTests, SegmentRW) {
-    std::filesystem::path dir = std::filesystem::current_path() / "Segment";
-    setDir(dir);
+    std::filesystem::path dir = getDir() / "SegmentRW";
     Segment segment(dir, 0, 32, SegmentState::Active);
     FetchResult result = segment.read(0, 32);
     ASSERT_TRUE(result.result_buf.empty());
@@ -41,4 +42,26 @@ TEST_F(BrokerLibTests, SegmentRW) {
 	}
     ASSERT_EQ(result.offset, offset);
     ASSERT_EQ(result_buf, data);
+    ASSERT_EQ(segment.getBaseOffset(), segment.getPublishedOffset());
 };
+
+TEST_F(BrokerLibTests, SegmentRWMultiple) {
+    std::filesystem::path dir = getDir() / "SegmentRWMultiple";
+    Segment segment(dir, 0, 32, SegmentState::Active);
+    FetchResult result = segment.read(0, 32);
+    std::vector<uint8_t> data, result_buf;
+    data.resize(4);
+    std::vector<uint64_t> offsets;
+    offsets.resize(8);
+    data.reserve(4);
+    for (int i = 0; i < 8; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            data[j] = i*4 + j;
+        }
+        offsets[i] = segment.append(data.data(), data.size()*sizeof(uint8_t));
+    }
+    for (int i = 0; i < 8; ++i) {
+        EXPECT_EQ(offsets[i], i);
+    }
+    EXPECT_TRUE(segment.isFull());
+}
