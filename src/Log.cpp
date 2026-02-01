@@ -1,13 +1,14 @@
 #include "../include/Log.h"
+#include <cstdint>
 
 FetchResult Log::fetch(const FetchRequest &request) {
 	std::shared_ptr<Segment> segment = findSegment(request.offset);
 	return segment->read(request.offset, request.max_bytes);
 }
 
-uint64_t Log::append(const AppendJob &job) {
+uint64_t Log::append(const AppendData &data) {
 	std::shared_ptr<Segment> active_segment = active_segment_.load(std::memory_order_acquire);
-	uint64_t offset = active_segment->append(job.payload.data(), job.payload.size());
+	uint64_t offset = active_segment->append(data.data.data(), data.data.size());
 	if (active_segment->isFull())
 		// optionally flush
 		rollover();

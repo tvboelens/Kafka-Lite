@@ -312,7 +312,7 @@ Index::Index(const std::filesystem::path &dir, uint64_t base_offset,
         do {
             rc = fstat(fd_, &st);
         } while (rc == -1 && errno == EINTR);
-
+		// What if rc signals an error? I think also then an exception should be thrown
         void *mrc = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd_, 0);
         if (mrc == MAP_FAILED)
             throw ::std::runtime_error("Failure of mmap.");

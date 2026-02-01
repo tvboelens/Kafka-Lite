@@ -1,35 +1,37 @@
 #ifndef APPENDQUEUE_H
 #define APPENDQUEUE_H
 
+#include <condition_variable>
 #include <future>
-#include <vector>
 #include <queue>
+#include <vector>
 
-struct AppendJob
-{
-	AppendJob(AppendJob &job_);
-	AppendJob(const AppendJob &job_) = delete;
-	AppendJob& operator=(const AppendJob &job_) = delete;
-	AppendJob(AppendJob &&job_) noexcept;
-	AppendJob &operator=(AppendJob &&job_) noexcept;
+struct AppendJob {
+    AppendJob() = default;
+    AppendJob(AppendJob &job_);
+    AppendJob(const AppendJob &job_) = delete;
+    AppendJob &operator=(const AppendJob &job_) = delete;
+    AppendJob(AppendJob &&job_) noexcept;
+    AppendJob &operator=(AppendJob &&job_) noexcept;
 
-	~AppendJob() = default;
+    ~AppendJob() = default;
 
-	std::vector<uint8_t> payload;
-	std::promise<uint64_t> result;
+    std::vector<uint8_t> payload;
+    std::promise<uint64_t> result;
 };
 
-class AppendQueue
-{
-	public:
-		AppendQueue();
-		~AppendQueue();
+class AppendQueue {
+  public:
+    AppendQueue();
+    ~AppendQueue();
 
-		void push(AppendJob &job);
-		AppendJob pop();
-	private:
-		std::queue<AppendJob> jobs_;
-		std::mutex mutex_;
+    void push(AppendJob &job);
+    void wait_and_pop(AppendJob &job);
+
+  private:
+    std::queue<AppendJob> jobs_;
+    std::mutex mutex_;
+    std::condition_variable cv_;
 };
 
 #endif

@@ -25,6 +25,7 @@ set(BROKER_LIB_SOURCES
 	src/Log.cpp
 	src/Segment.cpp
 	src/AppendQueue.cpp
+	src/BrokerCore.cpp
 )
 
 set(TEST_SOURCES

@@ -2,22 +2,25 @@
 #define LOG_H
 
 #include "Segment.h"
-#include "AppendQueue.h"
+#include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <vector>
 
 struct FetchRequest {
 	uint64_t offset;
 	size_t max_bytes;
 };
 
+struct AppendData {
+    std::vector<uint8_t> data;
+};
+
 class Log
 {
 	public:
-		Log(/* args */);
-		~Log();
 		FetchResult fetch(const FetchRequest &request);
-		uint64_t append(const AppendJob &job);
+		uint64_t append(const AppendData &data);
 		void rollover();
 
 	private:
@@ -29,14 +32,5 @@ class Log
 		std::mutex sealed_segments_mutex_;
 		std::atomic_int active_segment_readers_;
 };
-
-Log::Log(/* args */)
-{
-}
-
-Log::~Log()
-{
-}
-
 
 #endif
