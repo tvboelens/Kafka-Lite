@@ -45,7 +45,9 @@ TEST_F(BrokerLibTests, SegmentRW) {
 };
 
 /*
-
+        1. Index also has to be tested: Here we would have two different
+           situations for sealed and active segments
+        2. How to deal with sparsity in the indexing? Right now I index everything, but what about later?
 */
 
 TEST_F(BrokerLibTests, SegmentRWMultiple) {
@@ -76,7 +78,7 @@ TEST_F(BrokerLibTests, SegmentRWMultiple) {
                              4 * sizeof(uint8_t)));
 
     result = segment.read(4, 256);
-    ASSERT_EQ(result.result_buf.size(), 4*(4 + SEGMENT_HEADER_SIZE));
+    ASSERT_EQ(result.result_buf.size(), 4 * (4 + SEGMENT_HEADER_SIZE));
     for (int i = 4; i < 8; ++i) {
         EXPECT_EQ(0,
                   std::memcmp(datav[i].data(),
@@ -87,6 +89,18 @@ TEST_F(BrokerLibTests, SegmentRWMultiple) {
                               4 * sizeof(uint8_t)));
     }
 
-    result = segment.read(10, 256);
+    result = segment.read(8, 256);
     EXPECT_TRUE(result.result_buf.empty());
+}
+
+TEST_F(BrokerLibTests, IsFull) {
+    std::filesystem::path dir = getDir() / "IsFull";
+    Segment segment(dir, 0, SEGMENT_HEADER_SIZE + 1, SegmentState::Active);
+    std::vector<uint8_t> data;
+    data.push_back(1);
+    uint64_t offset = segment.append(data.data(), sizeof(uint8_t));
+    FetchResult result = segment.read(0, 100);
+    ASSERT_EQ(result.result_buf.size(), SEGMENT_HEADER_SIZE+1);
+    EXPECT_TRUE(segment.isFull());
+    EXPECT_EQ(data[0], result.result_buf[SEGMENT_HEADER_SIZE]);
 }
