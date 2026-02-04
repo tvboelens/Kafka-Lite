@@ -1,6 +1,9 @@
 #include "../include/Log.h"
 #include <cstdint>
 
+namespace kafka_lite {
+namespace broker {
+
 FetchResult Log::fetch(const FetchRequest &request) {
     std::shared_ptr<Segment> segment = findSegment(request.offset);
     return segment->read(request.offset, request.max_bytes);
@@ -41,6 +44,8 @@ void Log::rollover() {
 
 std::shared_ptr<Segment> Log::findSegment(uint64_t offset) {
     std::lock_guard<std::mutex> lock(sealed_segments_mutex_);
+    if (sealed_segments_.empty())
+        return active_segment_.load(std::memory_order_acquire);
     std::vector<std::shared_ptr<Segment>>::const_iterator it =
         sealed_segments_.begin();
     while (it->get()->getBaseOffset() > offset && it != sealed_segments_.end()) {
@@ -50,3 +55,5 @@ std::shared_ptr<Segment> Log::findSegment(uint64_t offset) {
         return active_segment_.load(std::memory_order_acquire);
     return *it;
 }
+} // namespace broker
+} // namespace kafka_lite

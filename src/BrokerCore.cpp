@@ -2,7 +2,11 @@
 #include <cstdint>
 #include <future>
 
+namespace kafka_lite {
+namespace broker {
+
 AppendResult BrokerCore::handleAppendRequest(const AppendRequest &request) {
+    // TODO: if stopped, don't enqueue anymore, but return error/throw exception
     AppendJob job;
     job.payload = request.payload;
     std::future<uint64_t> offset_future = job.result.get_future();
@@ -20,3 +24,5 @@ void BrokerCore::writerLoop() {
         job.result.set_value(offset);
     }
 }
+} // namespace broker
+} // namespace kafka_lite

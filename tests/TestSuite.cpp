@@ -1,9 +1,13 @@
 #include "../include/Segment.h"
+#include "../include/Log.h"
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <vector>
+
+namespace kafka_lite {
+namespace broker {
 
 class BrokerLibTests : public ::testing::Test {
   private:
@@ -104,3 +108,44 @@ TEST_F(BrokerLibTests, IsFull) {
     EXPECT_TRUE(segment.isFull());
     EXPECT_EQ(data[0], result.result_buf[SEGMENT_HEADER_SIZE]);
 }
+
+TEST_F(BrokerLibTests, LogReadWrite) {
+    std::filesystem::path dir = getDir() / "LogReadWrite";
+    Log log(dir, SEGMENT_HEADER_SIZE + 1);
+
+    std::vector<uint64_t> offsets;
+    AppendData data;
+    data.data.push_back(2);
+    auto offset = log.append(data);
+    FetchRequest request;
+    request.offset = offset;
+    request.max_bytes = 2 * (SEGMENT_HEADER_SIZE + 1);
+    auto result = log.fetch(request);
+    ASSERT_EQ(result.result_buf.size(), SEGMENT_HEADER_SIZE + 1);
+    ASSERT_EQ(result.result_buf[SEGMENT_HEADER_SIZE], 2);
+}
+
+TEST_F(BrokerLibTests, LogReadWriteRollover) {
+    std::filesystem::path dir = getDir() / "LogReadWriteRollover";
+    Log log(dir, 4*(SEGMENT_HEADER_SIZE + 1));
+
+    std::vector<uint64_t> offsets;
+    AppendData data;
+    int i;
+    for (i = 0; i < 100; ++i) {
+        data.data.clear();
+        data.data.push_back(i);
+        offsets.push_back(log.append(data));
+    }
+    i = 0;
+    FetchRequest request;
+    for (auto it = offsets.begin(); it != offsets.end(); ++it) {
+        request.offset = *it;
+        request.max_bytes = SEGMENT_HEADER_SIZE + 1;
+        auto result = log.fetch(request);
+        EXPECT_EQ(result.result_buf[result.result_buf.size() - 1], i);
+        ++i;
+	}
+}
+} // namespace broker
+} // namespace kafka_lite

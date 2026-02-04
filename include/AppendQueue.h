@@ -6,6 +6,8 @@
 #include <queue>
 #include <vector>
 
+namespace kafka_lite {
+namespace broker {
 struct AppendJob {
     AppendJob() = default;
     AppendJob(AppendJob &job_);
@@ -33,5 +35,6 @@ class AppendQueue {
     std::mutex mutex_;
     std::condition_variable cv_;
 };
+}}
 
 #endif

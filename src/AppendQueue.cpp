@@ -1,11 +1,16 @@
 #include "../include/AppendQueue.h"
 #include <mutex>
 
-AppendJob::AppendJob(AppendJob &job) : payload(job.payload), result(std::move(job.result)) {}
+namespace kafka_lite {
+namespace broker {
 
-AppendJob::AppendJob(AppendJob &&job) noexcept : payload(job.payload), result(std::move(job.result)) {}
+AppendJob::AppendJob(AppendJob &job)
+    : payload(job.payload), result(std::move(job.result)) {}
 
-AppendJob& AppendJob::operator=(AppendJob &&job) noexcept {
+AppendJob::AppendJob(AppendJob &&job) noexcept
+    : payload(job.payload), result(std::move(job.result)) {}
+
+AppendJob &AppendJob::operator=(AppendJob &&job) noexcept {
     if (&job == this)
         return *this;
     payload = job.payload;
@@ -21,7 +26,9 @@ void AppendQueue::push(AppendJob &job) {
 
 void AppendQueue::wait_and_pop(AppendJob &job) {
     std::unique_lock<std::mutex> lock(mutex_);
-    cv_.wait(lock, [this]{return !jobs_.empty();});
+    cv_.wait(lock, [this] { return !jobs_.empty(); });
     job = std::move(jobs_.front());
     jobs_.pop();
 }
+} // namespace broker
+} // namespace kafka_lite

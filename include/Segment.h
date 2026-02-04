@@ -5,6 +5,9 @@
 #include <filesystem>
 #include <vector>
 
+namespace kafka_lite {
+namespace broker {
+
 #define INDEX_ENTRY_SIZE 12
 #define OFFSET_SIZE 8
 #define SEGMENT_HEADER_SIZE 4
@@ -79,5 +82,6 @@ class Segment {
     std::atomic<uint64_t> published_size_;   // public?
     uint64_t max_size_, base_offset_;
 };
-
+} // namespace broker
+} // namespace kafka_lite
 #endif

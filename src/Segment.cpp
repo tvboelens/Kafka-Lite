@@ -70,6 +70,9 @@ bool write_u64_le(int fd, u_int64_t value) {
     return bytes_written == sizeof(value);
 }
 
+namespace kafka_lite {
+namespace broker {
+
 Segment::Segment(const std::filesystem::path &dir, uint64_t base_offset,
                  uint64_t max_size, SegmentState state)
     : dir_(dir), base_offset_(base_offset), max_size_(max_size), log_fd_(-1),
@@ -103,7 +106,7 @@ void Segment::init() {
     }
     do {
         log_fd_ = open(log_file.c_str(), flags, mode);
-    } while (log_fd_ == 1 && errno == EINTR);
+    } while (log_fd_ == -1 && errno == EINTR);
 
     if (log_fd_ == -1)
         throw std::ios_base::failure("Failed to open log file.");
@@ -428,3 +431,5 @@ bool Segment::isFull() {
     uint64_t size = published_size_.load(std::memory_order_acquire);
     return (size >= max_size_);
 }
+} // namespace broker
+} // namespace kafka_lite
