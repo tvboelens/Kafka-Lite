@@ -1,5 +1,5 @@
-#include "../include/Segment.h"
 #include "../include/Log.h"
+#include "../include/Segment.h"
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
@@ -9,7 +9,7 @@
 namespace kafka_lite {
 namespace broker {
 
-class BrokerLibTests : public ::testing::Test {
+class StorageEngineTests : public ::testing::Test {
   private:
     std::filesystem::path dir_;
 
@@ -23,9 +23,9 @@ class BrokerLibTests : public ::testing::Test {
     void TearDown() override;
 };
 
-void BrokerLibTests::TearDown() { std::filesystem::remove_all(dir_); }
+void StorageEngineTests::TearDown() { std::filesystem::remove_all(dir_); }
 
-TEST_F(BrokerLibTests, SegmentRW) {
+TEST_F(StorageEngineTests, SegmentRW) {
     std::filesystem::path dir = getDir() / "SegmentRW";
     Segment segment(dir, 0, 32, SegmentState::Active);
     FetchResult result = segment.read(0, 32);
@@ -51,10 +51,11 @@ TEST_F(BrokerLibTests, SegmentRW) {
 /*
         1. Index also has to be tested: Here we would have two different
            situations for sealed and active segments
-        2. How to deal with sparsity in the indexing? Right now I index everything, but what about later?
+        2. How to deal with sparsity in the indexing? Right now I index
+   everything, but what about later?
 */
 
-TEST_F(BrokerLibTests, SegmentRWMultiple) {
+TEST_F(StorageEngineTests, SegmentRWMultiple) {
     std::filesystem::path dir = getDir() / "SegmentRWMultiple";
     Segment segment(dir, 0, 32, SegmentState::Active);
     std::vector<uint8_t> data;
@@ -97,19 +98,19 @@ TEST_F(BrokerLibTests, SegmentRWMultiple) {
     EXPECT_TRUE(result.result_buf.empty());
 }
 
-TEST_F(BrokerLibTests, IsFull) {
+TEST_F(StorageEngineTests, IsFull) {
     std::filesystem::path dir = getDir() / "IsFull";
     Segment segment(dir, 0, SEGMENT_HEADER_SIZE + 1, SegmentState::Active);
     std::vector<uint8_t> data;
     data.push_back(1);
     uint64_t offset = segment.append(data.data(), sizeof(uint8_t));
     FetchResult result = segment.read(0, 100);
-    ASSERT_EQ(result.result_buf.size(), SEGMENT_HEADER_SIZE+1);
+    ASSERT_EQ(result.result_buf.size(), SEGMENT_HEADER_SIZE + 1);
     EXPECT_TRUE(segment.isFull());
     EXPECT_EQ(data[0], result.result_buf[SEGMENT_HEADER_SIZE]);
 }
 
-TEST_F(BrokerLibTests, LogReadWrite) {
+TEST_F(StorageEngineTests, LogReadWrite) {
     std::filesystem::path dir = getDir() / "LogReadWrite";
     Log log(dir, SEGMENT_HEADER_SIZE + 1);
 
@@ -125,9 +126,9 @@ TEST_F(BrokerLibTests, LogReadWrite) {
     ASSERT_EQ(result.result_buf[SEGMENT_HEADER_SIZE], 2);
 }
 
-TEST_F(BrokerLibTests, LogReadWriteRollover) {
+TEST_F(StorageEngineTests, LogReadWriteRollover) {
     std::filesystem::path dir = getDir() / "LogReadWriteRollover";
-    Log log(dir, 4*(SEGMENT_HEADER_SIZE + 1));
+    Log log(dir, 4 * (SEGMENT_HEADER_SIZE + 1));
 
     std::vector<uint64_t> offsets;
     AppendData data;
@@ -145,7 +146,44 @@ TEST_F(BrokerLibTests, LogReadWriteRollover) {
         auto result = log.fetch(request);
         EXPECT_EQ(result.result_buf[result.result_buf.size() - 1], i);
         ++i;
-	}
+    }
 }
+/*
+    Index tests
+    1. sparse and non-sparse
+        2. Active and sealed
+*/
+
+TEST_F(StorageEngineTests, IndexRW) {
+    std::filesystem::path dir = getDir() / "IndexRW";
+    {
+        Index index(dir, 0, SegmentState::Active);
+        IndexFileEntry entry;
+        uint32_t file_pos = 0;
+        for (uint64_t i = 0; i < 10; ++i) {
+            entry.offset = i;
+            entry.file_position = file_pos;
+            index.append(entry);
+            file_pos += 25 * (i % 4 + 1);
+        }
+        file_pos = 0;
+        for (uint64_t i = 0; i < 10; ++i) {
+            entry = index.determineClosestIndex(i);
+            EXPECT_EQ(entry.offset, i);
+            // EXPECT_EQ(entry.file_position, file_pos);
+            file_pos += 25 * (i % 4 + 1);
+        }
+    }
+    Index index(dir, 0, SegmentState::Sealed);
+    IndexFileEntry entry;
+    uint32_t file_pos = 0;
+    for (uint64_t i = 0; i < 10; ++i) {
+        entry = index.determineClosestIndex(i);
+        EXPECT_EQ(entry.offset, i);
+        // EXPECT_EQ(entry.file_position, file_pos);
+        file_pos += 25 * (i % 4 + 1);
+    }
+}
+
 } // namespace broker
 } // namespace kafka_lite
