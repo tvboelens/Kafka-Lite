@@ -44,16 +44,18 @@ void Log::rollover() {
 
 std::shared_ptr<Segment> Log::findSegment(uint64_t offset) {
     std::lock_guard<std::mutex> lock(sealed_segments_mutex_);
-    if (sealed_segments_.empty())
-        return active_segment_.load(std::memory_order_acquire);
+    std::shared_ptr<Segment> active_segment =
+        active_segment_.load(std::memory_order_acquire);
+    if (sealed_segments_.empty() || active_segment->getBaseOffset() <= offset)
+        return active_segment;
     std::vector<std::shared_ptr<Segment>>::const_iterator it =
         sealed_segments_.begin();
-    while (it->get()->getBaseOffset() > offset && it != sealed_segments_.end()) {
+    while (it != sealed_segments_.end() && it->get()->getBaseOffset() <= offset) {
         ++it;
     }
-    if (it == sealed_segments_.end())
-        return active_segment_.load(std::memory_order_acquire);
-    return *it;
+    if (it == sealed_segments_.end()) 
+        return sealed_segments_[sealed_segments_.size()-1];
+    return *(it-1);
 }
 } // namespace broker
 } // namespace kafka_lite

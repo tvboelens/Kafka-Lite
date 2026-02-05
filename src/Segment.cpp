@@ -403,27 +403,25 @@ IndexFileEntry Index::binarySearch(uint64_t offset, const char *buf,
     // If not, do binary search
     const char *M;
     while (L < R) {
-        M = L + INDEX_ENTRY_SIZE * (diff / 2);
+        M = L + INDEX_ENTRY_SIZE * (diff / 2+1);
         std::memcpy(&current_offset, M, sizeof(current_offset));
         if (is_big_endian())
             current_offset = byteswap64(current_offset);
-        if (current_offset < offset) {
+        if (current_offset <= offset) {
             L = M;
-            R -= INDEX_ENTRY_SIZE;
-            diff -= (diff / 2 + 1);
-        } else if (current_offset > offset) {
-            R = M;
-            diff /= 2;
+            diff -= (diff / 2+1);
         } else {
-            L = M;
-            R = M;
+            R = M-INDEX_ENTRY_SIZE;
+            diff /= 2;
         }
     }
 
-    entry.offset = current_offset;
-    std::memcpy(&entry.file_position, M + OFFSET_SIZE, FILE_POS_INDEX_SIZE);
-    if (is_big_endian())
+    std::memcpy(&entry.offset, L, sizeof(entry.offset));
+    std::memcpy(&entry.file_position, L + OFFSET_SIZE, FILE_POS_INDEX_SIZE);
+    if (is_big_endian()) {
+        entry.offset = byteswap64(entry.offset);
         entry.file_position = byteswap32(entry.file_position);
+        }
     return entry;
 }
 
