@@ -6,7 +6,25 @@ This is the C++ part. Each broker manages exactly one log partition. We start wi
 - BrokerCore
 	- Owns the append queue and Log/StorageEngine
 	- Spawns the thread that takes append jobs from the queue and calls `append()`.
+	- Here there should be a function that handles the `AppendRequest`
+		- This creates an `AppendJob`, does `std::future result = job.result.get_future()`, pushes the job on the queue and calls `result.get()`, afterwards returns the result.
 	- Reading also 
+- Networking layer
+	- not quite clear yet where this should live
+	- so lets start with an AppendRequest
+		- A single handler function would parse the request into an AppendJob, 
+		- The AppendJob consists of the data and a result of type `std::promise`, we can do `std::future result = job.result.get_future()`.
+		- Then push the job onto append queue and call `result.get()`.
+		- Once the result arrives we return it with the response to the client.
+		- So when to set the value of the promise?
+			- Without batching this is easy. Call `Segment::write`, receive the offset and set value.
+			- With batching we would have to:
+				- Use a condition variable to check size of data on queue together with a timeout
+				- Then once cv has notified/timed out, grab all the jobs from the queue and write the batch.
+				- I see two possibilities
+					1. Write each record, store the offset, then after all records are done, call fsync and then set the value of the promise
+					2. Or really write like Kafka: Batch has base offset and every record has delta offset. Method for writing a batch which returns the base offset. Then go through the list and set the result to base offset + delta offset. Call fsync before setting the value of course.
+		I feel like this can live inside BrokerCore, since BrokerCore owns the AppendQueue, so it can have the handler function and pass this handler function to boost asio.
 - Log class
 	- Owns the segments
 	- Fetches a record from the correct segment
@@ -63,6 +81,15 @@ This is the C++ part. Each broker manages exactly one log partition. We start wi
 	- For writing it tells the active segment to write and checks whether the segment is full, closes the segment if it is and starts a new log
 	- For reading finds the segment containing the offset and then reads from it.
 	- Should this also manage rotation etc? Or separate to a different class?
+#### On Disk Format
+- We can assume that the data is already serialized by producers before they send the data to the broker
+- So I think regardless of batching we can assume the following:
+	- The producer has already written/serialized the headers and the payload of the batch/record
+	- If we use a fixed format for the record/batch we only need:
+		1. length
+		2. checksum
+		3. Additionally some fixed headers from the TCP
+	3. Then we can assign (base) offset and just directly write the payload to disk
 ### Networking
 - This should be done in a separate class/file
 - This class listens to requests on a socket and relays read/write requests to the log class and responds
