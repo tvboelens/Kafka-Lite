@@ -63,8 +63,6 @@ class Segment {
         return published_offset_.load(std::memory_order_acquire);
     }
     void flush();
-    void seal();
-
     bool isFull();
 
   private:
