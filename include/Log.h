@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <shared_mutex>
 #include <vector>
 
 
@@ -33,7 +34,7 @@ class Log {
     Log(Log &&other) = delete;
     Log &operator=(Log &&other) = delete;
     ~Log() = default; // Do I need more?
-    FetchResult fetch(const FetchRequest &request);
+    FetchResult fetch(const FetchRequest &request) const;
     uint64_t append(const AppendData &data);
     void rollover();
 
@@ -41,10 +42,10 @@ class Log {
     std::filesystem::path dir_;
     uint64_t max_segment_size_;
     std::shared_ptr<Segment>
-    findSegment(uint64_t offset);
+    findSegment(uint64_t offset) const;
     std::vector<std::shared_ptr<Segment>> sealed_segments_;
     std::atomic<std::shared_ptr<Segment>> active_segment_;
-    std::mutex sealed_segments_mutex_;
+    mutable std::shared_mutex sealed_segments_mutex_;
 };
 } // namespace broker
 } // namespace kafka_lite

@@ -33,13 +33,13 @@ class Index {
     Index(const std::filesystem::path &dir, uint64_t base_offset,
           SegmentState state);
     ~Index();
-    IndexFileEntry determineClosestIndex(uint64_t offset);
+    IndexFileEntry determineClosestIndex(uint64_t offset) const;
     void append(const IndexFileEntry &entry);
     SegmentState state_;
 
   private:
     IndexFileEntry binarySearch(uint64_t offset, const char *buf,
-                                uint64_t file_size);
+                                uint64_t file_size) const;
     // IndexFileEntry binarySearchFromVector(uint64_t offset);
     std::filesystem::path dir_;
     const char *mmap_base_offset_;
@@ -56,21 +56,21 @@ class Segment {
             uint64_t published_offset, uint64_t max_size, SegmentState state);// Nonempty segment
     ~Segment();
 
-    FetchResult read(uint64_t offset, size_t max_bytes);
+    FetchResult read(uint64_t offset, size_t max_bytes) const;
     uint64_t append(const uint8_t *data, uint32_t len);
-    uint64_t getBaseOffset() { return base_offset_; };
-    uint64_t getPublishedOffset() {
+    uint64_t getBaseOffset() const { return base_offset_; }
+    uint64_t getPublishedOffset() const {
         return published_offset_.load(std::memory_order_acquire);
     }
     void flush();
-    bool isFull();
+    bool isFull() const;
 
   private:
     void init();
-    void verifyDataIntegrity(FetchResult &result);
-    uint32_t determineFilePosition(uint64_t offset);
+    void verifyDataIntegrity(FetchResult &result) const;
+    uint32_t determineFilePosition(uint64_t offset) const;
     uint32_t determineFilePosition(uint64_t offset,
-                                   const IndexFileEntry &entry);
+                                   const IndexFileEntry &entry) const;
 
     SegmentState state_;
     int log_fd_;

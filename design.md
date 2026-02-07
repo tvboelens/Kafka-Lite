@@ -54,6 +54,7 @@ Since I want to design for high throughput and do not expect long wait times, I 
 - Active segment is an atomic shared pointer, sealed segments are stored as a vector of shared pointers.
 - Potential rollover issue: We store shared pointers to the sealed segments in a vector and protect these with a mutex, which is locked both when reading and during rollover. If there are a lot of reader threads this could lead to the writer thread blocking for a long time before it acquires the lock. This should be inspected at some point.
 -  A fix would be to use some state to signal that rollover is taking place. Then readers would have to wait on a condition variable depending on the state not being rollover or stopping. Here the writer thread should call `notify_all()`.
+- I decided to use a shared_mutex. It seems to be platform independent whether writer starvation can occur, therefore I will have to monitor whether this happens and if so might have to find a library/implementation that does not starve the writer (maybe boost?).
 ### Segment class
 - The most sophisticated class, since it is responsible for almost all file operations (Index also has some, but is easier, since all its entries have the same length).
 - Uses atomics and acquire-release semantics to achieve synchronization/thread-safety.

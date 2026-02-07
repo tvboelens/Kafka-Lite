@@ -125,7 +125,7 @@ Segment::~Segment() {
         ::close(log_fd_);
 }
 
-FetchResult Segment::read(uint64_t offset, size_t max_bytes) {
+FetchResult Segment::read(uint64_t offset, size_t max_bytes) const {
     // use acquire semantics to ensure synchronization with append
     uint64_t current_offset = offset,
              pub_offset = published_offset_.load(std::memory_order_acquire),
@@ -242,13 +242,13 @@ uint64_t Segment::append(const uint8_t *data, uint32_t len) {
     return offset;
 }
 
-uint32_t Segment::determineFilePosition(uint64_t offset) {
+uint32_t Segment::determineFilePosition(uint64_t offset) const {
     auto entry = index_file_.determineClosestIndex(offset);
     return determineFilePosition(offset, entry);
 }
 
 uint32_t Segment::determineFilePosition(uint64_t offset,
-                                        const IndexFileEntry &entry) {
+                                        const IndexFileEntry &entry) const {
     uint64_t current_offset = entry.offset;
     uint32_t record_len, current_file_pos = entry.file_position;
     while (current_offset < offset) {
@@ -278,7 +278,7 @@ uint32_t Segment::determineFilePosition(uint64_t offset,
     return current_file_pos;
 }
 
-void Segment::verifyDataIntegrity(FetchResult &result) {
+void Segment::verifyDataIntegrity(FetchResult &result) const {
     /*
         For later when we include the checksums.
         This will verify the integrity of a record.
@@ -334,7 +334,7 @@ Index::~Index() {
         close(fd_);
 }
 
-IndexFileEntry Index::determineClosestIndex(uint64_t offset) {
+IndexFileEntry Index::determineClosestIndex(uint64_t offset) const {
     uint64_t file_size = published_size.load(std::memory_order_acquire);
     if (state_ == SegmentState::Active)
         return binarySearch(
@@ -366,7 +366,7 @@ void Index::append(const IndexFileEntry &data) {
 }
 
 IndexFileEntry Index::binarySearch(uint64_t offset, const char *buf,
-                                   uint64_t file_size) {
+                                   uint64_t file_size) const {
     // Entries have 12 bytes, 8 for the offset and 4 for the file position
     IndexFileEntry entry;
     uint64_t current_offset = 0, L_pos = 0,
@@ -425,7 +425,7 @@ IndexFileEntry Index::binarySearch(uint64_t offset, const char *buf,
     return entry;
 }
 
-bool Segment::isFull() {
+bool Segment::isFull() const {
     auto size = published_size_.load(std::memory_order_acquire);
     return (size >= max_size_);
 }
