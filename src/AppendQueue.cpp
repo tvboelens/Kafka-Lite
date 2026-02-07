@@ -4,9 +4,6 @@
 namespace kafka_lite {
 namespace broker {
 
-AppendJob::AppendJob(AppendJob &job)
-    : payload(job.payload), result(std::move(job.result)) {}
-
 AppendJob::AppendJob(AppendJob &&job) noexcept
     : payload(job.payload), result(std::move(job.result)) {}
 

@@ -10,7 +10,7 @@ namespace kafka_lite {
 namespace broker {
 struct AppendJob {
     AppendJob() = default;
-    AppendJob(AppendJob &job_);
+    AppendJob(AppendJob &job_) = delete;
     AppendJob(const AppendJob &job_) = delete;
     AppendJob &operator=(const AppendJob &job_) = delete;
     AppendJob(AppendJob &&job_) noexcept;
@@ -35,6 +35,7 @@ class AppendQueue {
     std::mutex mutex_;
     std::condition_variable cv_;
 };
-}}
+} // namespace broker
+} // namespace kafka_lite
 
 #endif
