@@ -92,9 +92,9 @@ Segment::Segment(const std::filesystem::path &dir, uint64_t base_offset,
 
 void Segment::init() {
     // maybe check if published offset < base offset and throw exception if true
-    std::string filename = std::to_string(base_offset_) + ".log";
+    auto filename = std::to_string(base_offset_) + ".log";
     std::filesystem::create_directories(dir_);
-    std::filesystem::path log_file = dir_.append(filename);
+    auto log_file = dir_.append(filename);
     mode_t mode;
     int flags, rc;
     if (state_ == SegmentState::Active) {
@@ -243,7 +243,7 @@ uint64_t Segment::append(const uint8_t *data, uint32_t len) {
 }
 
 uint32_t Segment::determineFilePosition(uint64_t offset) {
-    IndexFileEntry entry = index_file_.determineClosestIndex(offset);
+    auto entry = index_file_.determineClosestIndex(offset);
     return determineFilePosition(offset, entry);
 }
 
@@ -426,7 +426,7 @@ IndexFileEntry Index::binarySearch(uint64_t offset, const char *buf,
 }
 
 bool Segment::isFull() {
-    uint64_t size = published_size_.load(std::memory_order_acquire);
+    auto size = published_size_.load(std::memory_order_acquire);
     return (size >= max_size_);
 }
 } // namespace broker

@@ -41,7 +41,7 @@ class Log {
     std::filesystem::path dir_;
     uint64_t max_segment_size_;
     std::shared_ptr<Segment>
-    findSegment(uint64_t offset); // { return nullptr; };
+    findSegment(uint64_t offset);
     std::vector<std::shared_ptr<Segment>> sealed_segments_;
     std::atomic<std::shared_ptr<Segment>> active_segment_;
     std::mutex sealed_segments_mutex_;
