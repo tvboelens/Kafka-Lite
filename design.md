@@ -9,8 +9,9 @@ This is the C++ part. Each broker manages exactly one log partition. We start wi
 	- Here there should be a function that handles the `AppendRequest`
 		- This creates an `AppendJob`, does `std::future result = job.result.get_future()`, pushes the job on the queue and calls `result.get()`, afterwards returns the result.
 	- For reading not quite sure yet, this will depend on the network layer, need further research.
-- Networking layer
-	- not quite clear yet where this should live
+- Networking layer (BrokerServer)
+	- Owns BrokerCore, a reference to a `boost::asio::io_context` (which lives in `main`) and an instance of a `boost::asio::tcp::acceptor`.
+		- TODO: Figure out how to maintain multiple connections.
 	- so lets start with an AppendRequest
 		- A single handler function would parse the request into an AppendJob, 
 		- The AppendJob consists of the data and a result of type `std::promise`, we can do `std::future result = job.result.get_future()`.

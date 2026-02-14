@@ -24,9 +24,6 @@ struct AppendJob {
 
 class AppendQueue {
   public:
-    AppendQueue();
-    ~AppendQueue();
-
     void push(AppendJob &job);
     void wait_and_pop(AppendJob &job);
 

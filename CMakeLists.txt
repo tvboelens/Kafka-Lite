@@ -7,8 +7,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 project(Kafka-Lite LANGUAGES C CXX)
 
-# include necessary directories
-#include_directories(/opt/homebrew/include)
+set(BOOST_INCLUDE_LIBRARIES asio)
+set(BOOST_ENABLE_CMAKE ON)
 
 include(FetchContent)
 
@@ -17,15 +17,22 @@ FetchContent_Declare(
   URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
 )
 
-FetchContent_MakeAvailable(googletest)
+FetchContent_Declare(
+    Boost
+    GIT_REPOSITORY https://github.com/boostorg/boost.git
+    GIT_PROGRESS TRUE
+    GIT_TAG boost-1.90.0
+)
+
+FetchContent_MakeAvailable(googletest Boost)
 
 
 # Add source files
 set(BROKER_LIB_SOURCES
-	src/Log.cpp
-	src/Segment.cpp
-	src/AppendQueue.cpp
-	src/BrokerCore.cpp
+    src/Log.cpp
+    src/Segment.cpp
+    src/AppendQueue.cpp
+    src/BrokerCore.cpp
 )
 
 set(TEST_SOURCES
@@ -34,10 +41,14 @@ set(TEST_SOURCES
 
 
 # Define the executable
-add_executable(Broker src/main.cpp ${SOURCES})
+add_executable(Broker src/main.cpp ${BROKER_LIB_SOURCES})
 
 add_executable(TestSuite ${TEST_SOURCES}
 ${BROKER_LIB_SOURCES})
+target_link_libraries(Broker
+    PRIVATE
+    Boost::asio
+    )
 target_link_libraries(TestSuite 
     PRIVATE
                                 GTest::gtest_main

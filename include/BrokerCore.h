@@ -5,6 +5,8 @@
 #include "Log.h"
 #include <atomic>
 #include <cstdint>
+#include <filesystem>
+#include <thread>
 #include <vector>
 
 namespace kafka_lite {
@@ -19,12 +21,14 @@ struct AppendResult {
 
 class BrokerCore {
   public:
+    BrokerCore(const std::filesystem::path &dir, uint64_t segment_size): stop_(false), append_log_(dir, segment_size), writer_thread(&BrokerCore::writerLoop, this) {}
     AppendResult handleAppendRequest(const AppendRequest &request);
-
+	~BrokerCore(){stop_.store(true); if (writer_thread.joinable()) writer_thread.join();}
   private:
     AppendQueue append_queue_;
     Log append_log_;
     void writerLoop();
+    std::thread writer_thread;
     std::atomic_bool stop_;
 };
 } // namespace broker
