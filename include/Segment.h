@@ -65,6 +65,9 @@ class Segment {
     uint64_t getPublishedOffset() const {
         return published_offset_.load(std::memory_order_acquire);
     }
+    uint64_t getPublishedSize() const {
+        return published_size_.load(std::memory_order_acquire);
+    }
     void flush();
     bool isFull() const;
 
