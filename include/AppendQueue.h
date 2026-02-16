@@ -2,9 +2,12 @@
 #define APPENDQUEUE_H
 
 #include <condition_variable>
-#include <future>
+#include <functional>
 #include <queue>
+#include <system_error>
 #include <vector>
+
+using AppendCallback = std::function<void(uint64_t offset, std::error_code ec)>;
 
 namespace kafka_lite {
 namespace broker {
@@ -19,7 +22,7 @@ struct AppendJob {
     ~AppendJob() = default;
 
     std::vector<uint8_t> payload;
-    std::promise<uint64_t> result;
+    AppendCallback callback;
 };
 
 class AppendQueue {

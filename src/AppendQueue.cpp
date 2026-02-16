@@ -5,13 +5,13 @@ namespace kafka_lite {
 namespace broker {
 
 AppendJob::AppendJob(AppendJob &&job) noexcept
-    : payload(job.payload), result(std::move(job.result)) {}
+    : payload(job.payload), callback(job.callback) {}
 
 AppendJob &AppendJob::operator=(AppendJob &&job) noexcept {
     if (&job == this)
         return *this;
     payload = job.payload;
-    result = std::move(job.result);
+    callback = job.callback;
     return *this;
 }
 

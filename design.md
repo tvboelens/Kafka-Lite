@@ -71,12 +71,28 @@ Since I want to design for high throughput and do not expect long wait times, I 
 #### On Disk Format
 - We can assume that the data is already serialized by producers before they send the data to the broker
 - So I think regardless of batching we can assume the following:
-	- The producer has already written/serialized the headers and the payload of the batch/record
-	- If we use a fixed format for the record/batch we only need:
-		1. length
-		2. checksum
-		3. Additionally some fixed headers from the TCP
-	3. Then we can assign (base) offset and just directly write the payload to disk
+	- length (record or batch length)
+	- checksum (batch or record)
+	- payload (including record/batch headers)
+	- checksum is computed by the producer, needs to be verified by the broker before write
+		- This simply involves recomputing the checksum and comparing with the received checksum
+		- Question is where this should happen. I think pretty high up in the stack.
+		- So Server passes to Core by pushing on the AppendQueue. And then we block the thread.
+		- So I think checking in `Core::handleAppendRequest` would make sense, so that we can return early if we detect corruption or even already check in the caller.
+- Payload structure
+	- Record without batching
+		- Don't need to specify anything further here right now, the storage engine should be agnostic to this structure.
+	- Record with batching
+		- length
+		- offset delta (record offset - base offset)
+		- Don't need to specify anything further, again the storage engine is agnostic w.r.t the rest
+	- Batch
+		- number of records
+		- records themselves
+		- last offset delta?
+		- Kafka stores some other things, but these seem to be useful mostly for compaction (out of scope for now). Maybe attributes if I want to store `isTransactional` or `isControlBatch`, but unlikely for now.
+- Kafka also has control records, unsure what to do with that
+		
 ### Networking
 - This should be done in a separate class/file
 - This class listens to requests on a socket and relays read/write requests to the log class and responds

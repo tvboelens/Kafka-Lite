@@ -12,17 +12,10 @@
 namespace kafka_lite {
 namespace broker {
 
-struct AppendRequest {
-    std::vector<uint8_t> payload;
-};
-struct AppendResult {
-    uint64_t offset;
-};
-
 class BrokerCore {
   public:
     BrokerCore(const std::filesystem::path &dir, uint64_t segment_size): stop_(false), append_log_(dir, segment_size), writer_thread(&BrokerCore::writerLoop, this) {}
-    AppendResult handleAppendRequest(const AppendRequest &request);
+    void submit_append(const AppendData &data, AppendCallback callback);
 	~BrokerCore(){stop_.store(true); if (writer_thread.joinable()) writer_thread.join();}
   private:
     AppendQueue append_queue_;
