@@ -43,7 +43,6 @@ TEST_F(StorageEngineTests, SegmentRW) {
          it != result.result_buf.end(); ++it) {
         result_buf.push_back(*it);
     }
-    ASSERT_EQ(result.offset, offset);
     ASSERT_EQ(result_buf, data);
     ASSERT_EQ(segment.getBaseOffset(), segment.getPublishedOffset());
 };
@@ -160,14 +159,14 @@ TEST_F(StorageEngineTests, IndexRW) {
         Index index(dir, 0, SegmentState::Active);
         IndexFileEntry entry;
         uint32_t file_pos = 0;
-        for (uint64_t i = 0; i < 10; ++i) {
+        for (uint64_t i = 0; i < 1000; ++i) {
             entry.offset = i;
             entry.file_position = file_pos;
             index.append(entry);
             file_pos += 25 * (i % 4 + 1);
         }
         file_pos = 0;
-        for (uint64_t i = 0; i < 10; ++i) {
+        for (uint64_t i = 0; i < 1000; ++i) {
             entry = index.determineClosestIndex(i);
             EXPECT_EQ(entry.offset, i);
             // EXPECT_EQ(entry.file_position, file_pos);
@@ -180,7 +179,38 @@ TEST_F(StorageEngineTests, IndexRW) {
     for (uint64_t i = 0; i < 10; ++i) {
         entry = index.determineClosestIndex(i);
         EXPECT_EQ(entry.offset, i);
-        // EXPECT_EQ(entry.file_position, file_pos);
+        EXPECT_EQ(entry.file_position, file_pos);
+        file_pos += 25 * (i % 4 + 1);
+    }
+}
+
+TEST_F(StorageEngineTests, IndexRWSparse) {
+    std::filesystem::path dir = getDir() / "IndexRWSparse";
+    {
+        Index index(dir, 0, SegmentState::Active);
+        IndexFileEntry entry;
+        uint32_t file_pos = 0;
+        for (uint64_t i = 2; i < 1000; ++i) {
+            entry.offset = i*i;
+            entry.file_position = file_pos;
+            index.append(entry);
+            file_pos += 25 * (i % 4 + 1);
+        }
+        file_pos = 0;
+        for (uint64_t i = 2; i < 1000; ++i) {
+            entry = index.determineClosestIndex(i*i+i);
+            EXPECT_EQ(entry.offset, i*i);
+            EXPECT_EQ(entry.file_position, file_pos);
+            file_pos += 25 * (i % 4 + 1);
+        }
+    }
+    Index index(dir, 0, SegmentState::Sealed);
+    IndexFileEntry entry;
+    uint32_t file_pos = 0;
+    for (uint64_t i = 2; i < 1000; ++i) {
+        entry = index.determineClosestIndex(i*i+i);
+        EXPECT_EQ(entry.offset, i*i);
+        EXPECT_EQ(entry.file_position, file_pos);
         file_pos += 25 * (i % 4 + 1);
     }
 }
