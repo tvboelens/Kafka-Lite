@@ -56,26 +56,57 @@ TEST_F(StorageEngineTests, SegmentRW) {
 
 TEST_F(StorageEngineTests, SegmentRWMultiple) {
     std::filesystem::path dir = getDir() / "SegmentRWMultiple";
-    Segment segment(dir, 0, 32, SegmentState::Active);
     std::vector<uint8_t> data;
     std::vector<std::vector<uint8_t>> datav;
     datav.reserve(8);
     data.resize(4);
     std::vector<uint64_t> offsets;
-    offsets.resize(8);
-    data.reserve(4);
-    for (int i = 0; i < 8; ++i) {
-        for (int j = 0; j < 4; ++j) {
-            data[j] = i * 4 + j;
+    FetchResult result;
+    {
+        Segment segment(dir, 0, 32, SegmentState::Active);
+
+        offsets.resize(8);
+        data.reserve(4);
+        for (int i = 0; i < 8; ++i) {
+            for (int j = 0; j < 4; ++j) {
+                data[j] = i * 4 + j;
+            }
+            datav.push_back(data);
+            offsets[i] =
+                segment.append(data.data(), data.size() * sizeof(uint8_t));
         }
-        datav.push_back(data);
-        offsets[i] = segment.append(data.data(), data.size() * sizeof(uint8_t));
+        for (int i = 0; i < 8; ++i) {
+            EXPECT_EQ(offsets[i], i);
+        }
+        EXPECT_EQ(segment.getPublishedOffset(), 7);
+        EXPECT_TRUE(segment.isFull());
+        result = segment.read(7, 256);
+        ASSERT_EQ(result.result_buf.size(), 4 + SEGMENT_HEADER_SIZE);
+        EXPECT_EQ(0, std::memcmp(datav[7].data(),
+                                 result.result_buf.data() + SEGMENT_HEADER_SIZE,
+                                 4 * sizeof(uint8_t)));
+
+        result = segment.read(4, 256);
+        ASSERT_EQ(result.result_buf.size(), 4 * (4 + SEGMENT_HEADER_SIZE));
+        for (int i = 4; i < 8; ++i) {
+            EXPECT_EQ(
+                0, std::memcmp(datav[i].data(),
+                               result.result_buf.data() +
+                                   (4 * sizeof(uint8_t) + SEGMENT_HEADER_SIZE) *
+                                       (i - 4) +
+                                   SEGMENT_HEADER_SIZE,
+                               4 * sizeof(uint8_t)));
+        }
+
+        result = segment.read(8, 256);
+        EXPECT_TRUE(result.result_buf.empty());
     }
-    for (int i = 0; i < 8; ++i) {
-        EXPECT_EQ(offsets[i], i);
-    }
+
+    Segment segment(dir, 0, 7, 32, SegmentState::Sealed);
     EXPECT_TRUE(segment.isFull());
-    FetchResult result = segment.read(7, 256);
+    EXPECT_EQ(segment.getPublishedOffset(), 7);
+    EXPECT_TRUE(segment.getPublishedSize() > 0);
+    result = segment.read(7, 256);
     ASSERT_EQ(result.result_buf.size(), 4 + SEGMENT_HEADER_SIZE);
     EXPECT_EQ(0, std::memcmp(datav[7].data(),
                              result.result_buf.data() + SEGMENT_HEADER_SIZE,
@@ -109,6 +140,11 @@ TEST_F(StorageEngineTests, IsFull) {
     EXPECT_EQ(data[0], result.result_buf[SEGMENT_HEADER_SIZE]);
 }
 
+/*
+    TODO: Right now the tests below only read the data from a single append
+    But should read from multiple attempts, especially make sure to read across segment boundaries
+*/
+
 TEST_F(StorageEngineTests, LogReadWrite) {
     std::filesystem::path dir = getDir() / "LogReadWrite";
     Log log(dir, SEGMENT_HEADER_SIZE + 1);
@@ -141,9 +177,12 @@ TEST_F(StorageEngineTests, LogReadWriteRollover) {
     FetchRequest request;
     for (auto it = offsets.begin(); it != offsets.end(); ++it) {
         request.offset = *it;
-        request.max_bytes = SEGMENT_HEADER_SIZE + 1;
+        request.max_bytes = 100 * (SEGMENT_HEADER_SIZE + 1);
         auto result = log.fetch(request);
-        EXPECT_EQ(result.result_buf[result.result_buf.size() - 1], i);
+        ASSERT_EQ(result.result_buf.size(), 100*(SEGMENT_HEADER_SIZE+1));
+        for (int j = i; j < 100; ++j) {
+            EXPECT_EQ(result.result_buf[(j+1)*(SEGMENT_HEADER_SIZE+1)-1], j);
+        }
         ++i;
     }
 }
@@ -191,15 +230,15 @@ TEST_F(StorageEngineTests, IndexRWSparse) {
         IndexFileEntry entry;
         uint32_t file_pos = 0;
         for (uint64_t i = 2; i < 1000; ++i) {
-            entry.offset = i*i;
+            entry.offset = i * i;
             entry.file_position = file_pos;
             index.append(entry);
             file_pos += 25 * (i % 4 + 1);
         }
         file_pos = 0;
         for (uint64_t i = 2; i < 1000; ++i) {
-            entry = index.determineClosestIndex(i*i+i);
-            EXPECT_EQ(entry.offset, i*i);
+            entry = index.determineClosestIndex(i * i + i);
+            EXPECT_EQ(entry.offset, i * i);
             EXPECT_EQ(entry.file_position, file_pos);
             file_pos += 25 * (i % 4 + 1);
         }
@@ -208,8 +247,8 @@ TEST_F(StorageEngineTests, IndexRWSparse) {
     IndexFileEntry entry;
     uint32_t file_pos = 0;
     for (uint64_t i = 2; i < 1000; ++i) {
-        entry = index.determineClosestIndex(i*i+i);
-        EXPECT_EQ(entry.offset, i*i);
+        entry = index.determineClosestIndex(i * i + i);
+        EXPECT_EQ(entry.offset, i * i);
         EXPECT_EQ(entry.file_position, file_pos);
         file_pos += 25 * (i % 4 + 1);
     }
