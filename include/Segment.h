@@ -23,10 +23,10 @@ struct IndexFileEntry {
 struct SendfileData {
     int fd;
     int64_t length;
+    int64_t file_offset;
 };
 
 struct FetchResult {
-    int64_t offset;
     std::vector<uint8_t> result_buf;
     std::vector<SendfileData> sendfile_data;
 };
