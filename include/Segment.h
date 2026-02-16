@@ -20,12 +20,15 @@ struct IndexFileEntry {
     uint32_t file_position;
 };
 
-struct FetchResult {
+struct SendfileData {
     int fd;
-    int64_t offset;
     int64_t length;
+};
 
+struct FetchResult {
+    int64_t offset;
     std::vector<uint8_t> result_buf;
+    std::vector<SendfileData> sendfile_data;
 };
 
 class Index {
