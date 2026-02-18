@@ -290,7 +290,7 @@ void Segment::verifyDataIntegrity(FetchResult &result) const {
 
 Index::Index(const std::filesystem::path &dir, uint64_t base_offset,
              SegmentState state)
-    : dir_(dir), published_size_(0), fd_(-1), state_(state), last_written_offset_(0) {
+    : dir_(dir), published_size_(0), fd_(-1), state_(state), last_written_offset_(std::numeric_limits<uint64_t>::max()) {
     std::string filename = std::to_string(base_offset) + ".index";
     std::filesystem::create_directories(dir);
     std::filesystem::path log_file = dir_.append(filename);
@@ -346,7 +346,8 @@ IndexFileEntry Index::determineClosestIndex(uint64_t offset) const {
 void Index::append(const IndexFileEntry &data) {
     if (state_ == SegmentState::Sealed)
         throw std::runtime_error("Cannot write to sealed index.");
-    if (data.offset < last_written_offset_ && last_written_offset_ > 0)
+    if (data.offset < last_written_offset_ &&
+        last_written_offset_ != std::numeric_limits<uint64_t>::max())
         throw std::runtime_error("Tried to write smaller offset than published to index.");
     if (!write_u64_le(fd_, data.offset))
         throw std::ios_base::failure("Failed to write offset to index file.");
