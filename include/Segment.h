@@ -48,7 +48,8 @@ class Index {
     const char *mmap_base_offset_;
     std::vector<uint8_t> data_;
     int fd_;
-    std::atomic<uint64_t> published_size;
+    std::atomic<uint64_t> published_size_;
+    uint64_t last_written_offset_;
 };
 
 class Segment {

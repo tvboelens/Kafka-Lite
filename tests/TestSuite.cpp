@@ -189,7 +189,12 @@ TEST_F(StorageEngineTests, LogReadWriteRollover) {
 /*
     Index tests
     1. sparse and non-sparse
-        2. Active and sealed
+    2. Active and sealed
+    3. Adding IndexEntry is monotonic w.r.t. offset, i.e. offset of new entry
+       should be strictly larger than current largest indexed offset (Also
+       prevents duplicate indexing)
+    4. Empty index?
+    5. Large index/offset?
 */
 
 TEST_F(StorageEngineTests, IndexRW) {
@@ -252,6 +257,28 @@ TEST_F(StorageEngineTests, IndexRWSparse) {
         EXPECT_EQ(entry.file_position, file_pos);
         file_pos += 25 * (i % 4 + 1);
     }
+}
+
+TEST_F(StorageEngineTests, IndexMonotonic) {
+    std::filesystem::path dir = getDir() / "IndexMonotonic";
+    {
+        Index index(dir, 0, SegmentState::Active);
+        IndexFileEntry entry;
+        uint32_t file_pos = 0;
+        for (uint64_t i = 0; i < 10; ++i) {
+            entry.offset = i;
+            entry.file_position = file_pos;
+            index.append(entry);
+            file_pos += 25 * (i % 4 + 1);
+        }
+        entry.offset = 5;
+        entry.file_position = 25;
+        EXPECT_ANY_THROW(index.append(entry));
+    }
+    // Sealed index does not allow append
+    Index index(dir, 0, SegmentState::Sealed);
+    IndexFileEntry entry{11, 1500};
+    EXPECT_ANY_THROW(index.append(entry));
 }
 
 } // namespace broker

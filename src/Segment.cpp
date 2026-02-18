@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <filesystem>
 #include <limits>
+#include <stdexcept>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -289,7 +290,7 @@ void Segment::verifyDataIntegrity(FetchResult &result) const {
 
 Index::Index(const std::filesystem::path &dir, uint64_t base_offset,
              SegmentState state)
-    : dir_(dir), published_size(0), fd_(-1), state_(state) {
+    : dir_(dir), published_size_(0), fd_(-1), state_(state), last_written_offset_(0) {
     std::string filename = std::to_string(base_offset) + ".index";
     std::filesystem::create_directories(dir);
     std::filesystem::path log_file = dir_.append(filename);
@@ -320,14 +321,14 @@ Index::Index(const std::filesystem::path &dir, uint64_t base_offset,
         if (mrc == MAP_FAILED)
             throw ::std::runtime_error("Failure of mmap.");
         mmap_base_offset_ = reinterpret_cast<const char *>(mrc);
-        published_size.store(st.st_size, std::memory_order_release);
+        published_size_.store(st.st_size, std::memory_order_release);
         close(fd_);
     }
 }
 
 Index::~Index() {
     if (state_ == SegmentState::Sealed) {
-        size_t size = published_size.load(std::memory_order_acquire);
+        size_t size = published_size_.load(std::memory_order_acquire);
         munmap(const_cast<char *>(mmap_base_offset_), size);
     }
     if (fd_ != -1)
@@ -335,7 +336,7 @@ Index::~Index() {
 }
 
 IndexFileEntry Index::determineClosestIndex(uint64_t offset) const {
-    uint64_t file_size = published_size.load(std::memory_order_acquire);
+    uint64_t file_size = published_size_.load(std::memory_order_acquire);
     if (state_ == SegmentState::Active)
         return binarySearch(
             offset, reinterpret_cast<const char *>(data_.data()), file_size);
@@ -343,6 +344,10 @@ IndexFileEntry Index::determineClosestIndex(uint64_t offset) const {
 }
 
 void Index::append(const IndexFileEntry &data) {
+    if (state_ == SegmentState::Sealed)
+        throw std::runtime_error("Cannot write to sealed index.");
+    if (data.offset < last_written_offset_ && last_written_offset_ > 0)
+        throw std::runtime_error("Tried to write smaller offset than published to index.");
     if (!write_u64_le(fd_, data.offset))
         throw std::ios_base::failure("Failed to write offset to index file.");
     data_.resize(data_.size() + INDEX_ENTRY_SIZE);
@@ -356,13 +361,17 @@ void Index::append(const IndexFileEntry &data) {
         throw std::ios_base::failure(
             "Failed to write file position to index file.");
     uint32_t fpos_index = data.file_position;
+    /*
+      In binary search we do a byteswap and for active segments we search data_,
+      therefore do a byteswap here as well
+    */
     if (is_big_endian())
         fpos_index = byteswap32(fpos_index);
     std::memcpy(data_.data() + data_.size() - FILE_POS_INDEX_SIZE, &fpos_index,
                 FILE_POS_INDEX_SIZE);
-
+    last_written_offset_ = data.offset;
     uint64_t size =
-        published_size.fetch_add(INDEX_ENTRY_SIZE, std::memory_order_release);
+        published_size_.fetch_add(INDEX_ENTRY_SIZE, std::memory_order_release);
 }
 
 IndexFileEntry Index::binarySearch(uint64_t offset, const char *buf,
