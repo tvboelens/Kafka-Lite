@@ -1,5 +1,8 @@
 #include "../include/Log.h"
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <memory>
 #include <mutex>
 #include <shared_mutex>
 
@@ -7,8 +10,23 @@ namespace kafka_lite {
 namespace broker {
 
 FetchResult Log::fetch(const FetchRequest &request) const {
-    auto segment = findSegment(request.offset);
-    return segment->read(request.offset, request.max_bytes);
+    FetchResult result, temp_result;
+    uint64_t curr_offset = request.offset;
+    size_t curr_result_size, curr_max_bytes = request.max_bytes;
+    std::shared_ptr<Segment> segment;
+    do {
+        segment = findSegment(curr_offset);
+        temp_result = segment->read(request.offset, curr_max_bytes);
+        curr_result_size = result.result_buf.size();
+        curr_max_bytes -= temp_result.result_buf.size();
+        result.result_buf.resize(curr_result_size +
+                                 temp_result.result_buf.size());
+        std::memcpy(result.result_buf.data() + curr_result_size,
+                    temp_result.result_buf.data(),
+                    temp_result.result_buf.size());
+        curr_offset = segment->getPublishedOffset()+1;
+    } while (result.result_buf.size() < request.max_bytes && segment != active_segment_.load(std::memory_order_acquire));
+    return result;
 }
 
 uint64_t Log::append(const AppendData &data) {

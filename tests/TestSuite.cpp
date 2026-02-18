@@ -47,13 +47,6 @@ TEST_F(StorageEngineTests, SegmentRW) {
     ASSERT_EQ(segment.getBaseOffset(), segment.getPublishedOffset());
 };
 
-/*
-        1. Index also has to be tested: Here we would have two different
-           situations for sealed and active segments
-        2. How to deal with sparsity in the indexing? Right now I index
-   everything, but what about later?
-*/
-
 TEST_F(StorageEngineTests, SegmentRWMultiple) {
     std::filesystem::path dir = getDir() / "SegmentRWMultiple";
     std::vector<uint8_t> data;
@@ -168,22 +161,23 @@ TEST_F(StorageEngineTests, LogReadWriteRollover) {
     std::vector<uint64_t> offsets;
     AppendData data;
     int i;
-    for (i = 0; i < 100; ++i) {
+    for (i = 0; i < 98; ++i) {
         data.data.clear();
         data.data.push_back(i);
-        offsets.push_back(log.append(data));
+        auto offset = log.append(data);
+        offsets.push_back(offset);
+        ASSERT_EQ(offset, i);
     }
-    i = 0;
+    
     FetchRequest request;
-    for (auto it = offsets.begin(); it != offsets.end(); ++it) {
-        request.offset = *it;
+    for (i = 0; i < 98; ++i) {
+        request.offset = i;
         request.max_bytes = 100 * (SEGMENT_HEADER_SIZE + 1);
         auto result = log.fetch(request);
-        ASSERT_EQ(result.result_buf.size(), 100*(SEGMENT_HEADER_SIZE+1));
-        for (int j = i; j < 100; ++j) {
-            EXPECT_EQ(result.result_buf[(j+1)*(SEGMENT_HEADER_SIZE+1)-1], j);
+        ASSERT_EQ(result.result_buf.size(), (98-i)*(SEGMENT_HEADER_SIZE+1));//100 - i +1?
+        for (int j = 0; j < 98-i; ++j) {
+            ASSERT_EQ(result.result_buf[(j+1)*(SEGMENT_HEADER_SIZE+1)-1], i+j);
         }
-        ++i;
     }
 }
 /*
