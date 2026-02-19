@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <filesystem>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -150,8 +151,14 @@ FetchResult Segment::read(uint64_t offset, size_t max_bytes) const {
         uint64_t current_offset = pub_offset;
         IndexFileEntry entry;
         do {
-            entry = index_file_.determineClosestIndex(current_offset);
-            current_offset = entry.offset - 1;
+            auto entry_opt = index_file_.determineClosestIndex(current_offset);
+            if (entry_opt.has_value()) {
+                entry = entry_opt.value();
+                current_offset = entry.offset - 1;
+            } else {
+                entry.offset = offset;
+                entry.file_position = offset_file_position;
+            }
         } while (entry.file_position - offset_file_position > max_bytes);
 
         uint32_t next_file_position = determineFilePosition(entry.offset + 1),
@@ -244,8 +251,10 @@ uint64_t Segment::append(const uint8_t *data, uint32_t len) {
 }
 
 uint32_t Segment::determineFilePosition(uint64_t offset) const {
-    auto entry = index_file_.determineClosestIndex(offset);
-    return determineFilePosition(offset, entry);
+    auto entry_opt = index_file_.determineClosestIndex(offset);
+    if (entry_opt.has_value())
+        return determineFilePosition(offset, entry_opt.value());
+    return determineFilePosition(offset, {base_offset_, 0});
 }
 
 uint32_t Segment::determineFilePosition(uint64_t offset,
@@ -290,7 +299,8 @@ void Segment::verifyDataIntegrity(FetchResult &result) const {
 
 Index::Index(const std::filesystem::path &dir, uint64_t base_offset,
              SegmentState state)
-    : dir_(dir), published_size_(0), fd_(-1), state_(state), last_written_offset_(std::numeric_limits<uint64_t>::max()) {
+    : dir_(dir), published_size_(0), fd_(-1), state_(state),
+      last_written_offset_(std::numeric_limits<uint64_t>::max()) {
     std::string filename = std::to_string(base_offset) + ".index";
     std::filesystem::create_directories(dir);
     std::filesystem::path log_file = dir_.append(filename);
@@ -316,14 +326,16 @@ Index::Index(const std::filesystem::path &dir, uint64_t base_offset,
         do {
             rc = fstat(fd_, &st);
         } while (rc == -1 && errno == EINTR);
-		// What if rc signals an error? I think also then an exception should be thrown
+        // What if rc signals an error? I think also then an exception should be
+        // thrown
         void *mrc = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd_, 0);
         if (mrc == MAP_FAILED)
             throw ::std::runtime_error("Failure of mmap.");
         mmap_base_offset_ = reinterpret_cast<const char *>(mrc);
         published_size_.store(st.st_size, std::memory_order_release);
         close(fd_);
-    }
+    } else
+        published_size_.store(0, std::memory_order_release);
 }
 
 Index::~Index() {
@@ -335,8 +347,11 @@ Index::~Index() {
         close(fd_);
 }
 
-IndexFileEntry Index::determineClosestIndex(uint64_t offset) const {
+std::optional<IndexFileEntry>
+Index::determineClosestIndex(uint64_t offset) const {
     uint64_t file_size = published_size_.load(std::memory_order_acquire);
+    if (file_size == 0)
+        return std::nullopt;
     if (state_ == SegmentState::Active)
         return binarySearch(
             offset, reinterpret_cast<const char *>(data_.data()), file_size);
@@ -348,7 +363,8 @@ void Index::append(const IndexFileEntry &data) {
         throw std::runtime_error("Cannot write to sealed index.");
     if (data.offset < last_written_offset_ &&
         last_written_offset_ != std::numeric_limits<uint64_t>::max())
-        throw std::runtime_error("Tried to write smaller offset than published to index.");
+        throw std::runtime_error(
+            "Tried to write smaller offset than published to index.");
     if (!write_u64_le(fd_, data.offset))
         throw std::ios_base::failure("Failed to write offset to index file.");
     data_.resize(data_.size() + INDEX_ENTRY_SIZE);
@@ -413,15 +429,15 @@ IndexFileEntry Index::binarySearch(uint64_t offset, const char *buf,
     // If not, do binary search
     const char *M;
     while (L < R) {
-        M = L + INDEX_ENTRY_SIZE * (diff / 2+1);
+        M = L + INDEX_ENTRY_SIZE * (diff / 2 + 1);
         std::memcpy(&current_offset, M, sizeof(current_offset));
         if (is_big_endian())
             current_offset = byteswap64(current_offset);
         if (current_offset <= offset) {
             L = M;
-            diff -= (diff / 2+1);
+            diff -= (diff / 2 + 1);
         } else {
-            R = M-INDEX_ENTRY_SIZE;
+            R = M - INDEX_ENTRY_SIZE;
             diff /= 2;
         }
     }
@@ -431,7 +447,7 @@ IndexFileEntry Index::binarySearch(uint64_t offset, const char *buf,
     if (is_big_endian()) {
         entry.offset = byteswap64(entry.offset);
         entry.file_position = byteswap32(entry.file_position);
-        }
+    }
     return entry;
 }
 

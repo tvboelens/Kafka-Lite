@@ -4,6 +4,7 @@
 #include <cstring>
 #include <filesystem>
 #include <gtest/gtest.h>
+#include <optional>
 #include <vector>
 
 namespace kafka_lite {
@@ -195,6 +196,7 @@ TEST_F(StorageEngineTests, IndexRW) {
     std::filesystem::path dir = getDir() / "IndexRW";
     {
         Index index(dir, 0, SegmentState::Active);
+        std::optional<IndexFileEntry> entry_opt;
         IndexFileEntry entry;
         uint32_t file_pos = 0;
         for (uint64_t i = 0; i < 1000; ++i) {
@@ -205,19 +207,22 @@ TEST_F(StorageEngineTests, IndexRW) {
         }
         file_pos = 0;
         for (uint64_t i = 0; i < 1000; ++i) {
-            entry = index.determineClosestIndex(i);
-            EXPECT_EQ(entry.offset, i);
+            entry_opt = index.determineClosestIndex(i);
+            ASSERT_TRUE(entry_opt.has_value());
+            EXPECT_EQ(entry_opt.value().offset, i);
             // EXPECT_EQ(entry.file_position, file_pos);
             file_pos += 25 * (i % 4 + 1);
         }
     }
     Index index(dir, 0, SegmentState::Sealed);
     IndexFileEntry entry;
+    std::optional<IndexFileEntry> entry_opt;
     uint32_t file_pos = 0;
     for (uint64_t i = 0; i < 10; ++i) {
-        entry = index.determineClosestIndex(i);
-        EXPECT_EQ(entry.offset, i);
-        EXPECT_EQ(entry.file_position, file_pos);
+        entry_opt = index.determineClosestIndex(i);
+        ASSERT_TRUE(entry_opt.has_value());
+        EXPECT_EQ(entry_opt.value().offset, i);
+        EXPECT_EQ(entry_opt.value().file_position, file_pos);
         file_pos += 25 * (i % 4 + 1);
     }
 }
@@ -227,6 +232,7 @@ TEST_F(StorageEngineTests, IndexRWSparse) {
     {
         Index index(dir, 0, SegmentState::Active);
         IndexFileEntry entry;
+        std::optional<IndexFileEntry> entry_opt;
         uint32_t file_pos = 0;
         for (uint64_t i = 2; i < 1000; ++i) {
             entry.offset = i * i;
@@ -236,19 +242,22 @@ TEST_F(StorageEngineTests, IndexRWSparse) {
         }
         file_pos = 0;
         for (uint64_t i = 2; i < 1000; ++i) {
-            entry = index.determineClosestIndex(i * i + i);
-            EXPECT_EQ(entry.offset, i * i);
-            EXPECT_EQ(entry.file_position, file_pos);
+            entry_opt = index.determineClosestIndex(i * i + i);
+            ASSERT_TRUE(entry_opt.has_value());
+            EXPECT_EQ(entry_opt.value().offset, i * i);
+            EXPECT_EQ(entry_opt.value().file_position, file_pos);
             file_pos += 25 * (i % 4 + 1);
         }
     }
     Index index(dir, 0, SegmentState::Sealed);
     IndexFileEntry entry;
+    std::optional<IndexFileEntry> entry_opt;
     uint32_t file_pos = 0;
     for (uint64_t i = 2; i < 1000; ++i) {
-        entry = index.determineClosestIndex(i * i + i);
-        EXPECT_EQ(entry.offset, i * i);
-        EXPECT_EQ(entry.file_position, file_pos);
+        entry_opt = index.determineClosestIndex(i * i + i);
+        ASSERT_TRUE(entry_opt.has_value());
+        EXPECT_EQ(entry_opt.value().offset, i * i);
+        EXPECT_EQ(entry_opt.value().file_position, file_pos);
         file_pos += 25 * (i % 4 + 1);
     }
 }

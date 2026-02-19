@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <filesystem>
+#include <optional>
 #include <vector>
 
 namespace kafka_lite {
@@ -36,7 +37,7 @@ class Index {
     Index(const std::filesystem::path &dir, uint64_t base_offset,
           SegmentState state);
     ~Index();
-    IndexFileEntry determineClosestIndex(uint64_t offset) const;
+    std::optional<IndexFileEntry> determineClosestIndex(uint64_t offset) const;
     void append(const IndexFileEntry &entry);
     SegmentState state_;
 
