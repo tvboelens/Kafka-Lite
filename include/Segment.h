@@ -15,6 +15,7 @@ namespace broker {
 #define FILE_POS_INDEX_SIZE 4
 
 enum class SegmentState { Sealed, Active };
+enum class RecoveryResult { Recovered, Truncated, Corrupted};
 
 struct IndexFileEntry {
     uint64_t offset;
@@ -39,12 +40,12 @@ class Index {
     ~Index();
     std::optional<IndexFileEntry> determineClosestIndex(uint64_t offset) const;
     void append(const IndexFileEntry &entry);
-    SegmentState state_;
-
+    void seal(); // use only during recovery
   private:
     IndexFileEntry binarySearch(uint64_t offset, const char *buf,
                                 uint64_t file_size) const;
-    // IndexFileEntry binarySearchFromVector(uint64_t offset);
+
+    SegmentState state_;
     std::filesystem::path dir_;
     const char *mmap_base_offset_;
     std::vector<uint8_t> data_;
@@ -70,6 +71,8 @@ class Segment {
     uint64_t getPublishedSize() const {
         return published_size_.load(std::memory_order_acquire);
     }
+    RecoveryResult recover();
+    void seal(); // use only during recovery
     void flush();
     bool isFull() const;
 

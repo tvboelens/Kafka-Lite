@@ -56,10 +56,30 @@ Since I want to design for high throughput and do not expect long wait times, I 
 - Potential rollover issue: We store shared pointers to the sealed segments in a vector and protect these with a mutex, which is locked both when reading and during rollover. If there are a lot of reader threads this could lead to the writer thread blocking for a long time before it acquires the lock. This should be inspected at some point.
 -  A fix would be to use some state to signal that rollover is taking place. Then readers would have to wait on a condition variable depending on the state not being rollover or stopping. Here the writer thread should call `notify_all()`.
 - I decided to use a shared_mutex. It seems to be platform independent whether writer starvation can occur, therefore I will have to monitor whether this happens and if so might have to find a library/implementation that does not starve the writer (maybe boost?).
+- Well the previous part about only rollover logic being sophisticated is not quite true. We need to do crash recovery as well.
+	- First need to discover all the files and then sort them along the offsets.
+	- Then create a Segment instance, open the file and do crash recovery.
+	- Do this until final file is reached.
+	- For simplicity mark the final segment as active, let the normal write path do rollover logic if necessary
+	- If a segment is corrupted, truncate it and discard all the segments following it. Reasoning is that a single broker node should care more about correctness and replication is responsible for retrieving the truncated data. Or in the event of disk corruption it might even be better to kill the node and let another one take over.
+	- To keep things simple rebuild the index on recovery, i.e. delete the old index file and write a new one.
+	- Crash recovery should always be done on startup
+	- During recovery need to block read/write operations
 ### Segment class
 - The most sophisticated class, since it is responsible for almost all file operations (Index also has some, but is easier, since all its entries have the same length).
 - Uses atomics and acquire-release semantics to achieve synchronization/thread-safety.
 	- Size and published offset as atomics to ensure not reading past EOF or reading an offset that has not been written yet
+- Crash recovery
+	- Check every record. If corrupted, truncate the file (use `ftruncate`). Use checksums for detecting corruption, but do note that the Segment does not do any checking on writing, this is the responsibility of BrokerCore or maybe the Server. So when testing we need to make sure that the data we use also has checksums.
+	- Rebuild the index (see above)
+	- So now the question is also how to construct a segment for recovery. Right now have constructor for active and one for sealed segment
+		- So both constructors call init and in both cases this simply opens the file and stores the file size in published_size
+		- Only difference is that the constructor for sealed segments takes the published offset as variable and setting status to sealed opens the file as read-only
+		- So what is missing?
+			- Using the sealed constructor is not possible: we do not know the published offset beforehand and we may need to modify the file (truncate)
+			- using the active constructor is more advisable. the recovery method should then optionally change the status from active to sealed and if so reopen the file as read-only
+			- Then for the index file, use `std::filesystem::remove` (maybe simply at the start) and construct the index file as active and append the last record we recovered (if interval mode do after `n` records)
+			- So this means that also the index needs a `seal` method
 - Following members
 	- State: Active or Sealed, later maybe recovering
 	- file descriptor

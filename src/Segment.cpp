@@ -326,8 +326,8 @@ Index::Index(const std::filesystem::path &dir, uint64_t base_offset,
         do {
             rc = fstat(fd_, &st);
         } while (rc == -1 && errno == EINTR);
-        // What if rc signals an error? I think also then an exception should be
-        // thrown
+        if (rc == -1)
+            throw std::runtime_error("Failure of fstat.");
         void *mrc = mmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd_, 0);
         if (mrc == MAP_FAILED)
             throw ::std::runtime_error("Failure of mmap.");
@@ -455,5 +455,25 @@ bool Segment::isFull() const {
     auto size = published_size_.load(std::memory_order_acquire);
     return (size >= max_size_);
 }
+
+void Segment::seal() {
+    state_ = SegmentState::Sealed;
+    index_file_.seal();
+}
+
+void Index::seal() {
+    state_ = SegmentState::Sealed;
+    auto size = published_size_.load();
+    void *mrc = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd_, 0);
+    if (mrc == MAP_FAILED)
+        throw ::std::runtime_error("Failure of mmap.");
+    mmap_base_offset_ = reinterpret_cast<const char *>(mrc);
+    close(fd_);
+}
+
+RecoveryResult Segment::recover() {
+    return RecoveryResult::Recovered;
+}
+
 } // namespace broker
 } // namespace kafka_lite

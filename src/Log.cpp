@@ -1,4 +1,5 @@
 #include "../include/Log.h"
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -8,6 +9,44 @@
 
 namespace kafka_lite {
 namespace broker {
+
+std::vector<std::string> Log::determineSegmentFilepaths() {
+    std::vector<std::string> segment_filenames;
+    for (const auto &entry : std::filesystem::directory_iterator(dir_)) {
+        if (entry.path().string().compare(entry.path().string().size() - 4, 4,
+                                          ".log") == 0)
+            segment_filenames.push_back(entry.path().filename());
+    }
+    return segment_filenames;
+}
+
+void Log::recover(const std::vector<std::string> &segment_filenames) {
+    std::vector<uint64_t> base_offsets(segment_filenames.size());
+    for (int i = 0; i < base_offsets.size(); ++i) {
+        base_offsets[i] = std::stoll(
+            segment_filenames[i].substr(0, segment_filenames[i].size() - 4),
+            nullptr, 10);
+    }
+    std::sort(base_offsets.begin(), base_offsets.end());
+    std::shared_ptr<Segment> segment;
+    for (auto it = base_offsets.begin(); it != base_offsets.end(); ++it) {
+        // delete index file, since we rebuild it during segment recovery
+        auto index_fp = dir_ / (std::to_string(*it) + ".index");
+        std::filesystem::remove(index_fp);
+        segment = std::make_shared<Segment>(dir_, *it, max_segment_size_,
+                                                 SegmentState::Active);
+        auto result = segment->recover();
+        if (it + 1 == base_offsets.end() ||
+            result != RecoveryResult::Recovered) {
+            active_segment_.store(segment, std::memory_order_seq_cst);
+            if (result != RecoveryResult::Recovered)
+                break;
+        } else {
+            segment->seal();
+            sealed_segments_.push_back(segment);
+        }
+    }
+}
 
 FetchResult Log::fetch(const FetchRequest &request) const {
     FetchResult result, temp_result;
@@ -24,8 +63,9 @@ FetchResult Log::fetch(const FetchRequest &request) const {
         std::memcpy(result.result_buf.data() + curr_result_size,
                     temp_result.result_buf.data(),
                     temp_result.result_buf.size());
-        curr_offset = segment->getPublishedOffset()+1;
-    } while (result.result_buf.size() < request.max_bytes && segment != active_segment_.load(std::memory_order_acquire));
+        curr_offset = segment->getPublishedOffset() + 1;
+    } while (result.result_buf.size() < request.max_bytes &&
+             segment != active_segment_.load(std::memory_order_acquire));
     return result;
 }
 
@@ -43,7 +83,8 @@ void Log::rollover() {
     uint64_t old_base_offset = active_segment_.load(std::memory_order_relaxed)
                                    ->getBaseOffset(),
              new_base_offset = active_segment_.load(std::memory_order_relaxed)
-                                   ->getPublishedOffset() + 1;
+                                   ->getPublishedOffset() +
+                               1;
 
     auto next_active_segment = std::make_shared<Segment>(
              dir_, new_base_offset, max_segment_size_, SegmentState::Active),
@@ -59,7 +100,8 @@ void Log::rollover() {
        Let previous active segment go out of scope. Once all reader threads
        are done no shared ptr with a reference to it will exist and the
        destructor will clean up. The atomic swap and implementation of
-       findSegment ensure that no new thread will read from previous active segment.
+       findSegment ensure that no new thread will read from previous active
+       segment.
     */
     auto previous_active_segment = active_segment_.exchange(
         next_active_segment, std::memory_order_release);
