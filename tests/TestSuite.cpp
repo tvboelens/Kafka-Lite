@@ -183,6 +183,13 @@ TEST_F(StorageEngineTests, LogReadWriteRollover) {
         }
     }
 }
+
+TEST_F(StorageEngineTests, LogReadWriteNonActive) {
+    std::filesystem::path dir = getDir() / "LogReadNonActive";
+    Log log(dir, 4 * (SEGMENT_HEADER_SIZE + 1));
+    EXPECT_ANY_THROW(log.append({}));
+    EXPECT_ANY_THROW(log.fetch({0, 32}));
+}
 /*
     Index tests
     1. sparse and non-sparse
