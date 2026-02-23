@@ -10,6 +10,19 @@
 namespace kafka_lite {
 namespace broker {
 
+Log::Log(const std::filesystem::path &dir, uint64_t max_segment_size)
+    : dir_(dir), max_segment_size_(max_segment_size) {
+    std::filesystem::create_directories(dir_);
+    auto paths = determineSegmentFilepaths();
+    if (!paths.empty())
+        recover(paths);
+    else {
+        std::shared_ptr<Segment> segment = std::make_shared<Segment>(
+            dir_, 0, max_segment_size_, SegmentState::Active);
+        active_segment_.store(segment);
+    }
+}
+
 std::vector<std::string> Log::determineSegmentFilepaths() {
     std::vector<std::string> segment_filenames;
     for (const auto &entry : std::filesystem::directory_iterator(dir_)) {
@@ -34,7 +47,7 @@ void Log::recover(const std::vector<std::string> &segment_filenames) {
         auto index_fp = dir_ / (std::to_string(*it) + ".index");
         std::filesystem::remove(index_fp);
         segment = std::make_shared<Segment>(dir_, *it, max_segment_size_,
-                                                 SegmentState::Active);
+                                            SegmentState::Active);
         auto result = segment->recover();
         if (it + 1 == base_offsets.end() ||
             result != RecoveryResult::Recovered) {

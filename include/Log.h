@@ -21,18 +21,7 @@ struct AppendData {
 
 class Log {
   public:
-    Log(const std::filesystem::path &dir, uint64_t max_segment_size)
-        : dir_(dir), max_segment_size_(max_segment_size) {
-        std::filesystem::create_directories(dir_);
-        auto paths = determineSegmentFilepaths();
-        if (!paths.empty())
-            recover(paths);
-        else {
-            std::shared_ptr<Segment> segment = std::make_shared<Segment>(
-                dir_, 0, max_segment_size_, SegmentState::Active);
-            active_segment_.store(segment);
-        }
-    }
+    Log(const std::filesystem::path &dir, uint64_t max_segment_size);
     Log(const Log &other) = delete;
     Log &operator=(const Log &other) = delete;
     Log(Log &&other) = delete;
