@@ -142,6 +142,7 @@ TEST_F(StorageEngineTests, IsFull) {
 TEST_F(StorageEngineTests, LogReadWrite) {
     std::filesystem::path dir = getDir() / "LogReadWrite";
     Log log(dir, SEGMENT_HEADER_SIZE + 1);
+    log.start();
 
     std::vector<uint64_t> offsets;
     AppendData data;
@@ -158,6 +159,7 @@ TEST_F(StorageEngineTests, LogReadWrite) {
 TEST_F(StorageEngineTests, LogReadWriteRollover) {
     std::filesystem::path dir = getDir() / "LogReadWriteRollover";
     Log log(dir, 4 * (SEGMENT_HEADER_SIZE + 1));
+    log.start();
 
     std::vector<uint64_t> offsets;
     AppendData data;

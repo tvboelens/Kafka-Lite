@@ -7,20 +7,25 @@
 #include <cstdint>
 #include <filesystem>
 #include <thread>
-#include <vector>
 
 namespace kafka_lite {
 namespace broker {
 
+enum class BrokerCoreStatus { Starting, Recovering, Active, Stopping, Stopped };
+
 class BrokerCore {
   public:
-    BrokerCore(const std::filesystem::path &dir, uint64_t segment_size): stop_(false), append_log_(dir, segment_size), writer_thread(&BrokerCore::writerLoop, this) {}
+    BrokerCore(const std::filesystem::path &dir, uint64_t segment_size);
+    ~BrokerCore();
+    
     void submit_append(const AppendData &data, AppendCallback callback);
-	~BrokerCore(){stop_.store(true); if (writer_thread.joinable()) writer_thread.join();}
+    void start();
   private:
+    void writerLoop();
+    
     AppendQueue append_queue_;
     Log append_log_;
-    void writerLoop();
+    BrokerCoreStatus status_;
     std::thread writer_thread;
     std::atomic_bool stop_;
 };

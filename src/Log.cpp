@@ -6,12 +6,15 @@
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
+#include <stdexcept>
 
 namespace kafka_lite {
 namespace broker {
 
 Log::Log(const std::filesystem::path &dir, uint64_t max_segment_size)
-    : dir_(dir), max_segment_size_(max_segment_size) {
+    : status_(LogStatus::Closed), dir_(dir), max_segment_size_(max_segment_size) {}
+
+void Log::start() {
     std::filesystem::create_directories(dir_);
     auto paths = determineSegmentFilepaths();
     if (!paths.empty())
@@ -21,6 +24,7 @@ Log::Log(const std::filesystem::path &dir, uint64_t max_segment_size)
             dir_, 0, max_segment_size_, SegmentState::Active);
         active_segment_.store(segment);
     }
+    status_ = LogStatus::Open;
 }
 
 std::vector<std::string> Log::determineSegmentFilepaths() {
@@ -62,6 +66,8 @@ void Log::recover(const std::vector<std::string> &segment_filenames) {
 }
 
 FetchResult Log::fetch(const FetchRequest &request) const {
+    if (status_ != LogStatus::Open)
+        throw std::logic_error("Reading from log requires status open.");
     FetchResult result, temp_result;
     uint64_t curr_offset = request.offset;
     size_t curr_result_size, curr_max_bytes = request.max_bytes;
@@ -83,6 +89,8 @@ FetchResult Log::fetch(const FetchRequest &request) const {
 }
 
 uint64_t Log::append(const AppendData &data) {
+    if (status_ != LogStatus::Open)
+        throw std::logic_error("Writing to log requires status open.");
     auto active_segment = active_segment_.load(std::memory_order_acquire);
     uint64_t offset =
         active_segment->append(data.data.data(), data.data.size());
