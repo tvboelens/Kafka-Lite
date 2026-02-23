@@ -1,16 +1,16 @@
 #include "../include/Segment.h"
-#include <atomic>
 #include <bit>
+#include <boost/crc.hpp>
 #include <cstdint>
 #include <cstring>
 #include <fcntl.h>
 #include <filesystem>
-#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <vector>
 
 constexpr bool is_big_endian() {
     return std::endian::native == std::endian::big;
@@ -170,7 +170,7 @@ FetchResult Segment::read(uint64_t offset, size_t max_bytes) const {
             current_file_position = next_file_position;
             next_file_position = determineFilePosition(current_offset, entry);
         }
-        len = current_file_position - offset_file_position; // +1?
+        len = current_file_position - offset_file_position;
     } else
         len = segment_size - offset_file_position;
 
@@ -471,7 +471,102 @@ void Index::seal() {
     close(fd_);
 }
 
+using crc32c_type =
+    boost::crc_optimal<32, 0x1EDC6F41, 0xFFFFFFFF, 0xFFFFFFFF, true, true>;
+
 RecoveryResult Segment::recover() {
+    auto curr_offset = base_offset_;
+    IndexFileEntry index_entry{curr_offset, 0};
+    struct stat st;
+    int rc;
+    do {
+        rc = fstat(log_fd_, &st);
+    } while (rc == -1 && errno == EINTR);
+    if (rc == -1)
+        throw std::runtime_error("Failure of fstat.");
+
+    uint32_t record_len, curr_file_pos = 0;
+    size_t curr_read, bytes_read = 0;
+    crc32c_type crc32;
+    std::vector<uint8_t> record_payload;
+    while (curr_file_pos < st.st_size) {
+        index_entry.offset = curr_offset;
+        index_entry.file_position = curr_file_pos;
+
+        // read record length
+        while (bytes_read < sizeof(uint32_t)) {
+            curr_read = pread(log_fd_, &record_len, sizeof(uint32_t),
+                              curr_file_pos + bytes_read);
+            if (curr_read < 0) {
+                if (errno == EINTR)
+                    continue;
+                break;
+            }
+            if (curr_read == 0)
+                break;
+            bytes_read += curr_read;
+        }
+        if (bytes_read < sizeof(uint32_t))
+            throw std::ios_base::failure(
+                "Failed to read record length from log file.");
+        if (is_big_endian())
+            byteswap32(record_len);
+
+        // read record checksum
+        uint32_t read_checksum;
+        bytes_read = 0;
+        while (bytes_read < sizeof(uint32_t)) {
+            curr_read = pread(log_fd_, &record_len, sizeof(uint32_t),
+                              curr_file_pos + sizeof(uint32_t) + bytes_read);
+            if (curr_read < 0) {
+                if (errno == EINTR)
+                    continue;
+                break;
+            }
+            if (curr_read == 0)
+                break;
+            bytes_read += curr_read;
+        }
+        if (bytes_read < sizeof(uint32_t))
+            throw std::ios_base::failure(
+                "Failed to read record checksum from log file.");
+        if (is_big_endian())
+            byteswap32(read_checksum);
+
+        // read record payload
+        record_payload.resize(record_len - sizeof(uint32_t));
+        curr_read = 0;
+        bytes_read = 0;
+        while (bytes_read < record_len - sizeof(uint32_t)) {
+            curr_read =
+                pread(log_fd_, record_payload.data() + bytes_read,
+                      record_len - sizeof(uint32_t) - bytes_read,
+                      curr_file_pos + 2 * sizeof(uint32_t) + bytes_read);
+            if (curr_read < 0) {
+                if (errno == EINTR)
+                    continue;
+                break;
+            }
+            if (curr_read == 0)
+                break;
+            bytes_read += curr_read;
+        }
+        if (bytes_read < record_len - sizeof(uint32_t))
+            throw std::ios_base::failure(
+                "Failed to read record payload from log file.");
+
+        crc32.process_bytes(record_payload.data(), record_payload.size());
+        auto computed_checksum = crc32.checksum();
+        if (read_checksum != computed_checksum) {
+            ftruncate(log_fd_, curr_file_pos); //-1?
+            return RecoveryResult::Truncated;
+        }
+        index_file_.append(index_entry);
+        crc32.reset();
+        curr_file_pos += record_len;
+        ++curr_offset;
+    }
+
     return RecoveryResult::Recovered;
 }
 
