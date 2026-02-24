@@ -1,11 +1,21 @@
 #include "../include/Log.h"
 #include "../include/Segment.h"
+#include <boost/crc.hpp>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <optional>
 #include <vector>
+
+constexpr bool is_big_endian() {
+    return std::endian::native == std::endian::big;
+}
+
+constexpr std::uint32_t byteswap32(std::uint32_t value) {
+    return ((value & 0x000000FF) << 24) | ((value & 0x0000FF00) << 8) |
+           ((value & 0x00FF0000) >> 8) | ((value & 0xFF000000) >> 24);
+}
 
 namespace kafka_lite {
 namespace broker {
@@ -136,7 +146,8 @@ TEST_F(StorageEngineTests, IsFull) {
 
 /*
     TODO: Right now the tests below only read the data from a single append
-    But should read from multiple attempts, especially make sure to read across segment boundaries
+    But should read from multiple attempts, especially make sure to read across
+   segment boundaries
 */
 
 TEST_F(StorageEngineTests, LogReadWrite) {
@@ -171,15 +182,18 @@ TEST_F(StorageEngineTests, LogReadWriteRollover) {
         offsets.push_back(offset);
         ASSERT_EQ(offset, i);
     }
-    
+
     FetchRequest request;
     for (i = 0; i < 98; ++i) {
         request.offset = i;
         request.max_bytes = 100 * (SEGMENT_HEADER_SIZE + 1);
         auto result = log.fetch(request);
-        ASSERT_EQ(result.result_buf.size(), (98-i)*(SEGMENT_HEADER_SIZE+1));//100 - i +1?
-        for (int j = 0; j < 98-i; ++j) {
-            ASSERT_EQ(result.result_buf[(j+1)*(SEGMENT_HEADER_SIZE+1)-1], i+j);
+        ASSERT_EQ(result.result_buf.size(),
+                  (98 - i) * (SEGMENT_HEADER_SIZE + 1)); // 100 - i +1?
+        for (int j = 0; j < 98 - i; ++j) {
+            ASSERT_EQ(
+                result.result_buf[(j + 1) * (SEGMENT_HEADER_SIZE + 1) - 1],
+                i + j);
         }
     }
 }
@@ -189,6 +203,62 @@ TEST_F(StorageEngineTests, LogReadWriteNonActive) {
     Log log(dir, 4 * (SEGMENT_HEADER_SIZE + 1));
     EXPECT_ANY_THROW(log.append({}));
     EXPECT_ANY_THROW(log.fetch({0, 32}));
+}
+
+using crc32c_type =
+    boost::crc_optimal<32, 0x1EDC6F41, 0xFFFFFFFF, 0xFFFFFFFF, true, true>;
+
+TEST_F(StorageEngineTests, LogCleanRecovery) {
+    std::filesystem::path dir = getDir() / "LogCleanRecovery";
+    crc32c_type crc32c;
+    std::vector<uint32_t> checksums;
+    {
+        Log log(dir, 4 * (SEGMENT_HEADER_SIZE + 1));
+        log.start();
+        std::vector<uint64_t> offsets;
+        AppendData data;
+        for (uint8_t i = 0; i < 98; ++i) {
+            crc32c.process_byte(i);
+            uint32_t checksum = crc32c.checksum();
+            data.data.clear();
+            data.data.resize(sizeof(uint32_t));
+            if (is_big_endian())
+                byteswap32(checksum);
+            checksums.push_back(checksum);
+            std::memcpy(data.data.data(), &checksum, sizeof(uint32_t));
+            data.data.push_back(i);
+            auto offset = log.append(data);
+            offsets.push_back(offset);
+            ASSERT_EQ(offset, i);
+            crc32c.reset();
+        }
+    }
+
+    Log log(dir, 4 * (SEGMENT_HEADER_SIZE + 1));
+    log.start();
+    FetchRequest request;
+    uint32_t checksum;
+    for (uint8_t i = 0; i < 98; ++i) {
+        request.offset = i;
+        request.max_bytes = 500 * (SEGMENT_HEADER_SIZE + 1);
+        auto result = log.fetch(request);
+        ASSERT_EQ(result.result_buf.size(),
+                  (98 - i) * (SEGMENT_HEADER_SIZE + 1 + sizeof(uint32_t)));
+        for (int j = 0; j < 98 - i; ++j) {
+            std::memcpy(&checksum,
+                        result.result_buf.data() +
+                            j * (SEGMENT_HEADER_SIZE + 1 + sizeof(uint32_t)) +
+                            SEGMENT_HEADER_SIZE,
+                        sizeof(uint32_t));
+            if (is_big_endian())
+                byteswap32(checksum);
+            ASSERT_EQ(checksum, checksums[i + j]);
+            ASSERT_EQ(result.result_buf[(j + 1) * (SEGMENT_HEADER_SIZE + 1 +
+                                                   sizeof(uint32_t)) -
+                                        1],
+                      i + j);
+        }
+    }
 }
 /*
     Index tests
