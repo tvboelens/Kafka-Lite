@@ -260,6 +260,74 @@ TEST_F(StorageEngineTests, LogCleanRecovery) {
         }
     }
 }
+
+TEST_F(StorageEngineTests, LogTruncateMidRecord) {
+    std::filesystem::path dir = getDir() / "LogTruncateMidRecord";
+    crc32c_type crc32c;
+    std::vector<uint32_t> checksums;
+    std::vector<uint64_t> offsets;
+    std::vector<uint8_t> buf;
+    {
+        Log log(dir, 1024);
+        log.start();
+        AppendData data;
+        std::vector<uint8_t> buf;
+        for (int i = 0; i < 4; ++i) {
+            data.data.clear();
+            buf.clear();
+            data.data.resize(sizeof(uint32_t));
+            for (uint8_t j = 0; j < 10; ++j) {
+                buf.push_back((j * j) % i);
+            }
+            crc32c.process_bytes(buf.data(), buf.size());
+            uint32_t checksum = crc32c.checksum();
+            if (is_big_endian())
+                byteswap32(checksum);
+            checksums.push_back(checksum);
+            std::memcpy(data.data.data(), &checksum, sizeof(uint32_t));
+            for (const auto &byte : buf) {
+                data.data.push_back(byte);
+            }
+            auto offset = log.append(data);
+            offsets.push_back(offset);
+            ASSERT_EQ(offset, i);
+            crc32c.reset();
+        }
+    }
+
+    std::string filename(64, '0');
+    filename += ".log";
+    auto log_file = dir / filename;
+    std::filesystem::resize_file(log_file,
+                                 std::filesystem::file_size(log_file) - 5);
+    Log log(dir, 1024);
+    log.start();
+
+    ASSERT_EQ(log.getPublishedOffset(), offsets[offsets.size() - 2]);
+    FetchRequest request;
+    uint32_t checksum;
+    request.offset = 0;
+    request.max_bytes = 500;
+    auto result = log.fetch(request);
+    ASSERT_EQ(result.result_buf.size(),
+              3 * (SEGMENT_HEADER_SIZE + 10 + sizeof(uint32_t)));
+    for (int i = 0; i < 3; ++i) {
+        std::memcpy(&checksum,
+                    result.result_buf.data() +
+                        i * (SEGMENT_HEADER_SIZE + 10 + sizeof(uint32_t)) +
+                        SEGMENT_HEADER_SIZE,
+                    sizeof(uint32_t));
+        if (is_big_endian())
+            byteswap32(checksum);
+        ASSERT_EQ(checksum, checksums[i]);
+        for (uint8_t j = 0; j < 10; ++j) {
+            ASSERT_EQ(result.result_buf[(i + 1) * (SEGMENT_HEADER_SIZE +
+                                                   sizeof(uint32_t) + 10) +
+                                        j - 10],
+                      (j * j) % i);
+        }
+    }
+}
 /*
     Index tests
     1. sparse and non-sparse
