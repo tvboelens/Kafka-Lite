@@ -16,7 +16,7 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(googletest)
 
-find_package(Boost 1.90 REQUIRED CONFIG COMPONENTS headers)
+find_package(Boost 1.90 REQUIRED CONFIG)
 
 # Add source files
 set(BROKER_LIB_SOURCES
