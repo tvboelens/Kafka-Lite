@@ -478,6 +478,7 @@ RecoveryResult Segment::recover() {
     IndexFileEntry index_entry{curr_offset, 0};
     struct stat st;
     int rc;
+    bool truncate = false;
     do {
         rc = fstat(log_fd_, &st);
     } while (rc == -1 && errno == EINTR);
@@ -506,9 +507,14 @@ RecoveryResult Segment::recover() {
                 break;
             bytes_read += curr_read;
         }
-        if (bytes_read < sizeof(uint32_t))
+        if (bytes_read < sizeof(uint32_t)) {
+            if (curr_file_pos + bytes_read >= st.st_size) {
+                truncate = true;
+                break;
+            }
             throw std::ios_base::failure(
                 "Failed to read record length from log file.");
+        }
         if (is_big_endian())
             byteswap32(record_len);
 
@@ -528,9 +534,14 @@ RecoveryResult Segment::recover() {
                 break;
             bytes_read += curr_read;
         }
-        if (bytes_read < sizeof(uint32_t))
+        if (bytes_read < sizeof(uint32_t)) {
+            if (curr_file_pos + bytes_read + sizeof(uint32_t) >= st.st_size) {
+                truncate = true;
+                break;
+            }
             throw std::ios_base::failure(
                 "Failed to read record checksum from log file.");
+        }
         if (is_big_endian())
             byteswap32(read_checksum);
 
@@ -552,26 +563,36 @@ RecoveryResult Segment::recover() {
                 break;
             bytes_read += curr_read;
         }
-        if (bytes_read < record_len - sizeof(uint32_t))
+        if (bytes_read < record_len - sizeof(uint32_t)) {
+            if (curr_file_pos + bytes_read + 2 * sizeof(uint32_t) >=
+                st.st_size) {
+                truncate = true;
+                break;
+            }
             throw std::ios_base::failure(
                 "Failed to read record payload from log file.");
+        }
         crc32.process_bytes(record_payload.data(), record_payload.size());
         auto computed_checksum = crc32.checksum();
         if (read_checksum != computed_checksum) {
-            ftruncate(log_fd_, curr_file_pos); //-1?
-            do {
-                rc = fstat(log_fd_, &st);
-            } while (rc == -1 && errno == EINTR);
-            if (rc == -1)
-                throw std::runtime_error("Failure of fstat.");
-            published_size_.store(st.st_size);
-            published_offset_.store(curr_offset - 1);
-            return RecoveryResult::Truncated;
+            truncate = true;
+            break;
         }
         index_file_.append(index_entry);
         crc32.reset();
         curr_file_pos += (record_len + sizeof(uint32_t));
         ++curr_offset;
+    }
+    if (truncate) {
+        ftruncate(log_fd_, curr_file_pos);
+        do {
+            rc = fstat(log_fd_, &st);
+        } while (rc == -1 && errno == EINTR);
+        if (rc == -1)
+            throw std::runtime_error("Failure of fstat.");
+        published_size_.store(st.st_size);
+        published_offset_.store(curr_offset - 1);
+        return RecoveryResult::Truncated;
     }
     published_size_.store(st.st_size);
     published_offset_.store(curr_offset - 1);
