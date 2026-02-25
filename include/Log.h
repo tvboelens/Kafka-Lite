@@ -34,6 +34,7 @@ class Log {
     FetchResult fetch(const FetchRequest &request) const;
     uint64_t append(const AppendData &data);
     void rollover();
+    uint64_t getPublishedOffset();
 
   private:
     std::vector<std::string> determineSegmentFilepaths();

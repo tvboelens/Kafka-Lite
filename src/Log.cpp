@@ -1,5 +1,6 @@
 #include "../include/Log.h"
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -141,5 +142,13 @@ std::shared_ptr<Segment> Log::findSegment(uint64_t offset) const {
     }
     return *(it - 1);
 }
+
+uint64_t Log::getPublishedOffset() {
+    if (status_ != LogStatus::Open)
+        throw std::logic_error("Getting public status from log requires status open.");
+    auto active_segment = active_segment_.load(std::memory_order_acquire);
+    return active_segment->getPublishedOffset();
+}
+
 } // namespace broker
 } // namespace kafka_lite
