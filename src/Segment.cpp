@@ -95,8 +95,10 @@ Segment::Segment(const std::filesystem::path &dir, uint64_t base_offset,
 void Segment::init() {
     // maybe check if published offset < base offset and throw exception if true
     auto filename = std::to_string(base_offset_) + ".log";
+    std::string filler(68 - filename.size(), '0');
+    filename = filler + filename;
     std::filesystem::create_directories(dir_);
-    auto log_file = dir_.append(filename);
+    auto log_file = dir_ / filename;
     mode_t mode;
     int flags, rc;
     if (state_ == SegmentState::Active) {
@@ -296,9 +298,11 @@ Index::Index(const std::filesystem::path &dir, uint64_t base_offset,
              SegmentState state)
     : dir_(dir), published_size_(0), fd_(-1), state_(state),
       last_written_offset_(std::numeric_limits<uint64_t>::max()) {
-    std::string filename = std::to_string(base_offset) + ".index";
+    auto filename = std::to_string(base_offset) + ".index";
+    std::string filler(70 - filename.size(), '0');
+    filename = filler + filename;
     std::filesystem::create_directories(dir);
-    std::filesystem::path log_file = dir_.append(filename);
+    std::filesystem::path index_file = dir_ / filename;
     mode_t mode;
     int flags;
     if (state_ == SegmentState::Active) {
@@ -309,7 +313,7 @@ Index::Index(const std::filesystem::path &dir, uint64_t base_offset,
         mode = 0;
     }
     do {
-        fd_ = open(log_file.c_str(), flags, mode);
+        fd_ = open(index_file.c_str(), flags, mode);
     } while (fd_ == -1 && errno == EINTR);
 
     if (fd_ == -1)
