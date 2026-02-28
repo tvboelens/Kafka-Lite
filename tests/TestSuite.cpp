@@ -1,5 +1,6 @@
 #include "../include/Log.h"
 #include "../include/Segment.h"
+#include <algorithm>
 #include <boost/crc.hpp>
 #include <cstdint>
 #include <cstring>
@@ -328,14 +329,252 @@ TEST_F(StorageEngineTests, LogTruncateMidRecord) {
         }
     }
 }
+
+TEST_F(StorageEngineTests, LogTruncateRecordBoundary) {
+    std::filesystem::path dir = getDir() / "LogTruncateRecordBoundary";
+    crc32c_type crc32c;
+    std::vector<uint32_t> checksums;
+    std::vector<uint64_t> offsets;
+    std::vector<uint8_t> buf;
+    uint64_t truncate_pos = 0;
+    {
+        Log log(dir, 1024);
+        log.start();
+        AppendData data;
+        std::vector<uint8_t> buf;
+        for (int i = 0; i < 4; ++i) {
+            data.data.clear();
+            buf.clear();
+            data.data.resize(sizeof(uint32_t));
+            for (uint8_t j = 0; j < 10; ++j) {
+                buf.push_back((j * j) % i);
+            }
+            crc32c.process_bytes(buf.data(), buf.size());
+            uint32_t checksum = crc32c.checksum();
+            if (is_big_endian())
+                byteswap32(checksum);
+            checksums.push_back(checksum);
+            std::memcpy(data.data.data(), &checksum, sizeof(uint32_t));
+            for (const auto &byte : buf) {
+                data.data.push_back(byte);
+            }
+            auto offset = log.append(data);
+            if (i != 3)
+                truncate_pos += (data.data.size() + SEGMENT_HEADER_SIZE);
+            offsets.push_back(offset);
+            ASSERT_EQ(offset, i);
+            crc32c.reset();
+        }
+    }
+
+    std::string filename(64, '0');
+    filename += ".log";
+    auto log_file = dir / filename;
+    std::filesystem::resize_file(log_file, truncate_pos);
+    Log log(dir, 1024);
+    log.start();
+
+    ASSERT_EQ(log.getPublishedOffset(), offsets[offsets.size() - 2]);
+    FetchRequest request;
+    uint32_t checksum;
+    request.offset = 0;
+    request.max_bytes = 500;
+    auto result = log.fetch(request);
+    ASSERT_EQ(result.result_buf.size(),
+              3 * (SEGMENT_HEADER_SIZE + 10 + sizeof(uint32_t)));
+    for (int i = 0; i < 3; ++i) {
+        std::memcpy(&checksum,
+                    result.result_buf.data() +
+                        i * (SEGMENT_HEADER_SIZE + 10 + sizeof(uint32_t)) +
+                        SEGMENT_HEADER_SIZE,
+                    sizeof(uint32_t));
+        if (is_big_endian())
+            byteswap32(checksum);
+        ASSERT_EQ(checksum, checksums[i]);
+        for (uint8_t j = 0; j < 10; ++j) {
+            ASSERT_EQ(result.result_buf[(i + 1) * (SEGMENT_HEADER_SIZE +
+                                                   sizeof(uint32_t) + 10) +
+                                        j - 10],
+                      (j * j) % i);
+        }
+    }
+}
+
+TEST_F(StorageEngineTests, LogRecoveryNoIndex) {
+    std::filesystem::path dir = getDir() / "LogRecoveryNoIndex";
+    crc32c_type crc32c;
+    std::vector<uint32_t> checksums;
+    std::vector<uint64_t> offsets;
+    std::vector<uint8_t> buf;
+    uint64_t truncate_pos = 0;
+    {
+        Log log(dir, 1024);
+        log.start();
+        AppendData data;
+        std::vector<uint8_t> buf;
+        for (int i = 0; i < 4; ++i) {
+            data.data.clear();
+            buf.clear();
+            data.data.resize(sizeof(uint32_t));
+            for (uint8_t j = 0; j < 10; ++j) {
+                buf.push_back((j * j) % i);
+            }
+            crc32c.process_bytes(buf.data(), buf.size());
+            uint32_t checksum = crc32c.checksum();
+            if (is_big_endian())
+                byteswap32(checksum);
+            checksums.push_back(checksum);
+            std::memcpy(data.data.data(), &checksum, sizeof(uint32_t));
+            for (const auto &byte : buf) {
+                data.data.push_back(byte);
+            }
+            auto offset = log.append(data);
+            offsets.push_back(offset);
+            ASSERT_EQ(offset, i);
+            crc32c.reset();
+        }
+    }
+
+    std::string filename(64, '0');
+    filename += ".index";
+    auto index_file = dir / filename;
+    ASSERT_TRUE(std::filesystem::remove(index_file));
+    Log log(dir, 1024);
+    log.start();
+
+    ASSERT_EQ(log.getPublishedOffset(), offsets[offsets.size() - 1]);
+    FetchRequest request;
+    uint32_t checksum;
+    request.offset = 0;
+    request.max_bytes = 500;
+    auto result = log.fetch(request);
+    ASSERT_EQ(result.result_buf.size(),
+              4 * (SEGMENT_HEADER_SIZE + 10 + sizeof(uint32_t)));
+    for (int i = 0; i < 4; ++i) {
+        std::memcpy(&checksum,
+                    result.result_buf.data() +
+                        i * (SEGMENT_HEADER_SIZE + 10 + sizeof(uint32_t)) +
+                        SEGMENT_HEADER_SIZE,
+                    sizeof(uint32_t));
+        if (is_big_endian())
+            byteswap32(checksum);
+        ASSERT_EQ(checksum, checksums[i]);
+        for (uint8_t j = 0; j < 10; ++j) {
+            ASSERT_EQ(result.result_buf[(i + 1) * (SEGMENT_HEADER_SIZE +
+                                                   sizeof(uint32_t) + 10) +
+                                        j - 10],
+                      (j * j) % i);
+        }
+    }
+}
+
+std::vector<uint64_t> getSortedBaseOffsets(const std::filesystem::path &dir) {
+    std::vector<uint64_t> base_offsets;
+    std::string filename;
+    for (const auto &entry : std::filesystem::directory_iterator(dir)) {
+        filename = entry.path().filename().string();
+        if (filename.compare(filename.size() - 4, 4, ".log") == 0)
+            base_offsets.push_back(
+                std::stoll(filename.substr(0, filename.size() - 4),
+                           nullptr, 10));
+    }
+    std::sort(base_offsets.begin(), base_offsets.end());
+    return base_offsets;
+}
+
+TEST_F(StorageEngineTests, LogRecoveryAfterRolloverFsync) {
+    std::filesystem::path dir = getDir() / "LogRecoveryAfterRolloverFsync";
+    crc32c_type crc32c;
+    std::vector<uint32_t> checksums;
+    std::vector<uint64_t> offsets, base_offsets;
+    std::vector<uint8_t> buf;
+    uint64_t truncate_pos = 0;
+    {
+        Log log(dir, 32);
+        log.start();
+        AppendData data;
+        std::vector<uint8_t> buf;
+        int i = 0;
+        while (base_offsets.size() < 2) {
+            data.data.clear();
+            buf.clear();
+            data.data.resize(sizeof(uint32_t));
+            for (uint8_t j = 0; j < 10; ++j) {
+                buf.push_back((j * j) % i);
+            }
+            crc32c.process_bytes(buf.data(), buf.size());
+            uint32_t checksum = crc32c.checksum();
+            if (is_big_endian())
+                byteswap32(checksum);
+            checksums.push_back(checksum);
+            std::memcpy(data.data.data(), &checksum, sizeof(uint32_t));
+            for (const auto &byte : buf) {
+                data.data.push_back(byte);
+            }
+            auto offset = log.append(data);
+            offsets.push_back(offset);
+            ASSERT_EQ(offset, i);
+            crc32c.reset();
+            ++i;
+            base_offsets = getSortedBaseOffsets(dir);
+        }
+    }
+
+    auto filename = std::to_string(base_offsets[1]) + ".log";
+    std::string filler(68 - filename.size(), '0');
+    filename = filler + filename;
+    ASSERT_TRUE(std::filesystem::remove(dir / filename));
+    Log log(dir, 1024);
+    log.start();
+
+    ASSERT_EQ(log.getPublishedOffset(), offsets[offsets.size() - 2]);
+    FetchRequest request;
+    uint32_t checksum;
+    request.offset = 0;
+    request.max_bytes = 500;
+    auto result = log.fetch(request);
+    ASSERT_EQ(result.result_buf.size(),
+              (offsets.size() - 1) *
+                  (SEGMENT_HEADER_SIZE + 10 + sizeof(uint32_t)));
+    for (int i = 0; i < offsets.size() - 1; ++i) {
+        std::memcpy(&checksum,
+                    result.result_buf.data() +
+                        i * (SEGMENT_HEADER_SIZE + 10 + sizeof(uint32_t)) +
+                        SEGMENT_HEADER_SIZE,
+                    sizeof(uint32_t));
+        if (is_big_endian())
+            byteswap32(checksum);
+        ASSERT_EQ(checksum, checksums[i]);
+        for (uint8_t j = 0; j < 10; ++j) {
+            ASSERT_EQ(result.result_buf[(i + 1) * (SEGMENT_HEADER_SIZE +
+                                                   sizeof(uint32_t) + 10) +
+                                        j - 10],
+                      (j * j) % i);
+        }
+    }
+}
+
+/*
+    Crash recovery tests
+    1. Delete index file -> done
+    2. Corrupt index file
+    3. Crash involving rollover
+        1. During rollover but before fsync -> truncate (part of) last
+   record of previous active segment
+        2. During rollover after fsync before write to new active segment ->
+   delete new segment file -> done
+                3. After rollover during write to new active segment ->
+   truncate new log file
+*/
+
 /*
     Index tests
-    1. sparse and non-sparse
-    2. Active and sealed
-    3. Adding IndexEntry is monotonic w.r.t. offset, i.e. offset of new entry
-       should be strictly larger than current largest indexed offset (Also
-       prevents duplicate indexing)
-    4. Empty index?
+    1. sparse and non-sparse -> done
+    2. Active and sealed -> done
+    3. Adding IndexEntry is monotonic w.r.t. offset, i.e. offset of new
+   entry should be strictly larger than current largest indexed offset (Also
+       prevents duplicate indexing) -> done
+    4. Empty index -> done
     5. Large index/offset?
 */
 
@@ -429,6 +668,13 @@ TEST_F(StorageEngineTests, IndexMonotonic) {
     Index index(dir, 0, SegmentState::Sealed);
     IndexFileEntry entry{11, 1500};
     EXPECT_ANY_THROW(index.append(entry));
+}
+
+TEST_F(StorageEngineTests, IndexFindWhenEmpty) {
+    std::filesystem::path dir = getDir() / "IndexFindWhenEmpty";
+    Index index(dir, 0, SegmentState::Active);
+    auto entry = index.determineClosestIndex(0);
+    ASSERT_FALSE(entry.has_value());
 }
 
 } // namespace broker
