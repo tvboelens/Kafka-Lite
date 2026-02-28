@@ -78,7 +78,6 @@ class Segment {
 
   private:
     void init();
-    void verifyDataIntegrity(FetchResult &result) const;
     uint32_t determineFilePosition(uint64_t offset) const;
     uint32_t determineFilePosition(uint64_t offset,
                                    const IndexFileEntry &entry) const;

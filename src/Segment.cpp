@@ -285,15 +285,6 @@ uint32_t Segment::determineFilePosition(uint64_t offset,
     return current_file_pos;
 }
 
-void Segment::verifyDataIntegrity(FetchResult &result) const {
-    /*
-        For later when we include the checksums.
-        This will verify the integrity of a record.
-        If a record is corrupted, then the result is truncated to hold all the
-       records up until the corrupted one.
-    */
-}
-
 Index::Index(const std::filesystem::path &dir, uint64_t base_offset,
              SegmentState state)
     : dir_(dir), published_size_(0), fd_(-1), state_(state),
