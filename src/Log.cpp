@@ -92,12 +92,11 @@ FetchResult Log::fetch(const FetchRequest &request) const {
 uint64_t Log::append(const AppendData &data) {
     if (status_ != LogStatus::Open)
         throw std::logic_error("Writing to log requires status open.");
+    if (activeSegmentIsFull())
+        rollover();
     auto active_segment = active_segment_.load(std::memory_order_acquire);
     uint64_t offset =
         active_segment->append(data.data.data(), data.data.size());
-    if (active_segment->isFull())
-        // optionally flush
-        rollover();
     return offset;
 }
 
@@ -148,6 +147,10 @@ uint64_t Log::getPublishedOffset() {
         throw std::logic_error("Getting public status from log requires status open.");
     auto active_segment = active_segment_.load(std::memory_order_acquire);
     return active_segment->getPublishedOffset();
+}
+
+bool Log::activeSegmentIsFull() {
+    return active_segment_.load(std::memory_order_acquire)->isFull();
 }
 
 } // namespace broker

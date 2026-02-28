@@ -39,6 +39,7 @@ class Log {
   private:
     std::vector<std::string> determineSegmentFilepaths();
     void recover(const std::vector<std::string> &segment_filepaths);
+    bool activeSegmentIsFull();
 
     LogStatus status_;
     std::filesystem::path dir_;
