@@ -476,6 +476,12 @@ RecoveryResult Segment::recover() {
     if (rc == -1)
         throw std::runtime_error("Failure of fstat.");
 
+    if (st.st_size == 0) {
+        published_size_.store(0);
+        published_offset_.store(base_offset_-1);
+        return RecoveryResult::Truncated;
+	}
+
     uint32_t record_len = 0, curr_file_pos = 0;
     size_t curr_read, bytes_read = 0;
     crc32c_type crc32;
