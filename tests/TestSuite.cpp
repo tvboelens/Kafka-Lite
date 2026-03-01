@@ -262,6 +262,48 @@ TEST_F(StorageEngineTests, LogCleanRecovery) {
     }
 }
 
+TEST_F(StorageEngineTests, LogRecoveryEmptySegment) {
+    std::filesystem::path dir = getDir() / "LogRecoveryEmptySegment";
+    crc32c_type crc32c;
+    std::vector<uint32_t> checksums;
+    {
+        Log log(dir, 500);
+        log.start();
+        std::vector<uint64_t> offsets;
+        AppendData data;
+        for (uint8_t i = 0; i < 3; ++i) {
+            crc32c.process_byte(i);
+            uint32_t checksum = crc32c.checksum();
+            data.data.clear();
+            data.data.resize(sizeof(uint32_t));
+            if (is_big_endian())
+                byteswap32(checksum);
+            checksums.push_back(checksum);
+            std::memcpy(data.data.data(), &checksum, sizeof(uint32_t));
+            data.data.push_back(i);
+            auto offset = log.append(data);
+            offsets.push_back(offset);
+            ASSERT_EQ(offset, i);
+            crc32c.reset();
+        }
+    }
+
+    std::string filename(64, '0');
+    filename += ".log";
+    auto log_file = dir / filename;
+    std::filesystem::resize_file(log_file, 0);
+    Log log(dir, 500);
+    log.start();
+    AppendData append_data;
+    append_data.data.push_back(5);
+    auto offset = log.append(append_data);
+    ASSERT_EQ(offset, 0);
+    FetchRequest req{0, 50};
+    auto result = log.fetch(req);
+    ASSERT_EQ(result.result_buf.size(), SEGMENT_HEADER_SIZE + 1);
+    ASSERT_EQ(result.result_buf[result.result_buf.size()-1], 5);
+}
+
 TEST_F(StorageEngineTests, LogTruncateMidRecord) {
     std::filesystem::path dir = getDir() / "LogTruncateMidRecord";
     crc32c_type crc32c;
@@ -474,9 +516,8 @@ std::vector<uint64_t> getSortedBaseOffsets(const std::filesystem::path &dir) {
     for (const auto &entry : std::filesystem::directory_iterator(dir)) {
         filename = entry.path().filename().string();
         if (filename.compare(filename.size() - 4, 4, ".log") == 0)
-            base_offsets.push_back(
-                std::stoll(filename.substr(0, filename.size() - 4),
-                           nullptr, 10));
+            base_offsets.push_back(std::stoll(
+                filename.substr(0, filename.size() - 4), nullptr, 10));
     }
     std::sort(base_offsets.begin(), base_offsets.end());
     return base_offsets;
@@ -520,12 +561,93 @@ TEST_F(StorageEngineTests, LogRecoveryAfterRolloverFsync) {
         }
     }
 
+    // delete new segment file
     auto filename = std::to_string(base_offsets[1]) + ".log";
     std::string filler(68 - filename.size(), '0');
     filename = filler + filename;
-    ASSERT_TRUE(std::filesystem::remove(dir / filename));
+    auto log_file = dir / filename;
+    std::filesystem::resize_file(log_file, 0);
     Log log(dir, 1024);
     log.start();
+
+    ASSERT_EQ(getSortedBaseOffsets(dir).size(), 2);
+    ASSERT_TRUE(std::filesystem::is_empty(log_file));
+    ASSERT_EQ(log.getPublishedOffset(), offsets[offsets.size() - 2]);
+    FetchRequest request;
+    uint32_t checksum;
+    request.offset = 0;
+    request.max_bytes = 500;
+    auto result = log.fetch(request);
+    ASSERT_EQ(result.result_buf.size(),
+              (offsets.size() - 1) *
+                  (SEGMENT_HEADER_SIZE + 10 + sizeof(uint32_t)));
+    for (int i = 0; i < offsets.size() - 1; ++i) {
+        std::memcpy(&checksum,
+                    result.result_buf.data() +
+                        i * (SEGMENT_HEADER_SIZE + 10 + sizeof(uint32_t)) +
+                        SEGMENT_HEADER_SIZE,
+                    sizeof(uint32_t));
+        if (is_big_endian())
+            byteswap32(checksum);
+        ASSERT_EQ(checksum, checksums[i]);
+        for (uint8_t j = 0; j < 10; ++j) {
+            ASSERT_EQ(result.result_buf[(i + 1) * (SEGMENT_HEADER_SIZE +
+                                                   sizeof(uint32_t) + 10) +
+                                        j - 10],
+                      (j * j) % i);
+        }
+    }
+}
+
+TEST_F(StorageEngineTests, LogRolloverTruncateActiveSegment) {
+    std::filesystem::path dir = getDir() / "LogRolloverTruncateActiveSegment";
+    crc32c_type crc32c;
+    std::vector<uint32_t> checksums;
+    std::vector<uint64_t> offsets, base_offsets;
+    std::vector<uint8_t> buf;
+    uint64_t truncate_pos = 0;
+    {
+        Log log(dir, 32);
+        log.start();
+        AppendData data;
+        std::vector<uint8_t> buf;
+        int i = 0;
+        while (base_offsets.size() < 2) {
+            data.data.clear();
+            buf.clear();
+            data.data.resize(sizeof(uint32_t));
+            for (uint8_t j = 0; j < 10; ++j) {
+                buf.push_back((j * j) % i);
+            }
+            crc32c.process_bytes(buf.data(), buf.size());
+            uint32_t checksum = crc32c.checksum();
+            if (is_big_endian())
+                byteswap32(checksum);
+            checksums.push_back(checksum);
+            std::memcpy(data.data.data(), &checksum, sizeof(uint32_t));
+            for (const auto &byte : buf) {
+                data.data.push_back(byte);
+            }
+            auto offset = log.append(data);
+            offsets.push_back(offset);
+            ASSERT_EQ(offset, i);
+            crc32c.reset();
+            ++i;
+            base_offsets = getSortedBaseOffsets(dir);
+        }
+    }
+
+    // truncate new segment file
+    auto filename = std::to_string(base_offsets[1]) + ".log";
+    std::string filler(68 - filename.size(), '0');
+    filename = filler + filename;
+    auto log_file = dir/filename;
+    std::filesystem::resize_file(log_file,
+                                 std::filesystem::file_size(log_file) - 5);
+    Log log(dir, 1024);
+    log.start();
+    ASSERT_EQ(getSortedBaseOffsets(dir).size(), 2);
+    ASSERT_TRUE(std::filesystem::is_empty(log_file));
 
     ASSERT_EQ(log.getPublishedOffset(), offsets[offsets.size() - 2]);
     FetchRequest request;
@@ -560,11 +682,11 @@ TEST_F(StorageEngineTests, LogRecoveryAfterRolloverFsync) {
     2. Corrupt index file
     3. Crash involving rollover
         1. During rollover but before fsync -> truncate (part of) last
-   record of previous active segment
+           record of previous active segment -> done
         2. During rollover after fsync before write to new active segment ->
-   delete new segment file -> done
-                3. After rollover during write to new active segment ->
-   truncate new log file
+           delete new segment file -> done
+        3. After rollover during write to new active segment ->
+           truncate new log file
 */
 
 /*
