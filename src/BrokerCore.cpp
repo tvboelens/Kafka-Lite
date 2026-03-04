@@ -27,16 +27,39 @@ void BrokerCore::submit_append(const AppendData &data,
     if (status_ == BrokerCoreStatus::Stopping ||
         status_ == BrokerCoreStatus::Stopped) {
         std::error_code ec = std::make_error_code(std::errc::not_connected);
-        callback(0, ec); // TODO: maybe here boost::asio::post already needs to be called?
+        callback(0, ec); // TODO: maybe here boost::asio::post already needs to
+                         // be called?
         return;
     } else if (status_ == BrokerCoreStatus::Starting ||
                status_ == BrokerCoreStatus::Recovering) {
         while (status_ != BrokerCoreStatus::Active);// Block appends to avoid appends during recovery
-	}
+    }
     AppendJob job;
     job.payload = data.data;
     job.callback = callback;
     append_queue_.push(job);
+}
+
+void BrokerCore::submit_fetch(const FetchRequest &request,
+                              FetchCallback callback) {
+    if (status_ == BrokerCoreStatus::Stopping ||
+        status_ == BrokerCoreStatus::Stopped) {
+        std::error_code ec = std::make_error_code(std::errc::not_connected);
+        callback({}, ec); // TODO: maybe here boost::asio::post already needs to
+                          // be called?
+        return;
+    } else if (status_ == BrokerCoreStatus::Starting ||
+               status_ == BrokerCoreStatus::Recovering) {
+        while (status_ != BrokerCoreStatus::Active); // Block reads to avoid appends during recovery
+    }
+    std::error_code ec;
+    FetchResult result;
+    try {
+        result = append_log_.fetch(request);
+    } catch (const std::exception &e) {
+        ec = make_error_code(std::errc::io_error);
+    }
+    callback(result, ec);
 }
 
 void BrokerCore::writerLoop() {
