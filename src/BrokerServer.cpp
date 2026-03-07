@@ -37,14 +37,20 @@ TcpConnection::TcpConnection(boost::asio::io_context &io_context,
     : strand_(boost::asio::make_strand(io_context)), socket_(io_context),
       core_(core) {}
 
-void TcpConnection::start() { doReadLengthHeader(); }
+void TcpConnection::start() {
+    boost::asio::post(strand_, [self = shared_from_this()]() { self->doReadLengthHeader(); });
+}
 
 void TcpConnection::doReadLengthHeader() {
     boost::asio::async_read(
         socket_, boost::asio::buffer(length_header_buf_),
-        [this](boost::system::error_code ec, size_t bytes_read) {
-            uint32_t length = parseLength(length_header_buf_);
-            doReadTcpRequest(length);
+        [self = shared_from_this()](boost::system::error_code ec, size_t bytes_read) {
+            if (ec) {
+                self->stop();
+                return;
+            }
+            uint32_t length = parseLength(self->length_header_buf_);
+            self->doReadTcpRequest(length);
         });
 }
 
@@ -52,15 +58,14 @@ void TcpConnection::doReadTcpRequest(uint32_t length) {
     read_buf_.resize(length);
     boost::asio::async_read(
         socket_, boost::asio::buffer(read_buf_),
-        [this, self = shared_from_this()](boost::system::error_code ec,
-                                          size_t bytes_read) {
+        [self = shared_from_this()](boost::system::error_code ec, size_t bytes_read) {
             if (ec) {
-                stop();
+                self->stop();
                 return;
             }
-            std::vector<uint8_t> bytes(read_buf_);
-            handleTcpRequest(std::move(bytes));
-            doReadLengthHeader();
+            std::vector<uint8_t> bytes(self->read_buf_);
+            self->handleTcpRequest(std::move(bytes));
+            self->doReadLengthHeader();
         });
 }
 
@@ -86,8 +91,7 @@ void TcpConnection::handleAppendRequest(const AppendRequest &request) {
 
 void TcpConnection::handleFetchRequest(const FetchRequest &request) {
     core_->submit_fetch(
-        request, [self = shared_from_this()](const FetchResult &result,
-                                             std::error_code ec) {
+        request, [self = shared_from_this()](const FetchResult &result, std::error_code ec) {
             boost::asio::post(self->strand_, [self, result, ec]() {
                 TcpResponse response = makeResponse(result, ec);
                 self->sendResponse(response);
@@ -137,7 +141,6 @@ void TcpConnection::stop() {
             "Error when shutting down socket, error code: " + ec.to_string();
         throw std::runtime_error(msg);
     }
-    while (!write_queue_.empty());
     rc = socket_.shutdown(tcp::socket::shutdown_send, ec);
     if (!rc) {
         std::string msg =
