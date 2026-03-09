@@ -129,6 +129,44 @@ Since I want to design for high throughput and do not expect long wait times, I 
 	- `FetchRequest`
 	- `HeartBeatRequest`
 	- `ReplicaSyncRequest`
+- TODO
+	- request parsing
+	- making request
+	- error handling
+		- bad request
+		- socket errors?
+		- storage engine errors -> do in makeResponse
+#### TCP request structure
+- Length header
+- Checksum
+- Correlation id
+- type
+	- Append
+	- Fetch
+	- Heartbeat
+	- ReplicaSync
+- version
+- payload
+#### TCP response structure
+- length
+- checksum
+- error code
+- correlation id
+- payload
+#### Error codes
+- OK
+- Bad request
+- Corrupted request -> try again
+- Storage engine error
+- request ignored (backpressure)
+
+### Client classes and functions
+- Function to generate TCP request from AppendRequest
+- Function to generate TCP request from FetchRequest
+- Function to generate checksum and prefix it to payload
+- BrokerCore client for testing
+	- Should be able to append and fetch from multiple threads and should record results per thread
+- BrokerServer client
 
 
 ## Orchestration (Go)
