@@ -28,7 +28,9 @@ set(BROKER_LIB_SOURCES
 )
 
 set(TEST_SOURCES
-    tests/TestSuite.cpp
+    tests/BrokerCoreTests.cpp
+    tests/BrokerServerTests.cpp
+    tests/StorageEngineTests.cpp
 )
 
 

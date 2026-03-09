@@ -30,7 +30,7 @@ class StorageEngineTests : public ::testing::Test {
 
   protected:
     void SetUp() override {
-        dir_ = std::filesystem::current_path() / "Segment";
+        dir_ = std::filesystem::current_path() / "StorageEngine";
     }
     void TearDown() override;
 };
@@ -145,12 +145,6 @@ TEST_F(StorageEngineTests, IsFull) {
     EXPECT_EQ(data[0], result.result_buf[SEGMENT_HEADER_SIZE]);
 }
 
-/*
-    TODO: Right now the tests below only read the data from a single append
-    But should read from multiple attempts, especially make sure to read across
-   segment boundaries
-*/
-
 TEST_F(StorageEngineTests, LogReadWrite) {
     std::filesystem::path dir = getDir() / "LogReadWrite";
     Log log(dir, SEGMENT_HEADER_SIZE + 1);
@@ -190,7 +184,7 @@ TEST_F(StorageEngineTests, LogReadWriteRollover) {
         request.max_bytes = 100 * (SEGMENT_HEADER_SIZE + 1);
         auto result = log.fetch(request);
         ASSERT_EQ(result.result_buf.size(),
-                  (98 - i) * (SEGMENT_HEADER_SIZE + 1)); // 100 - i +1?
+                  (98 - i) * (SEGMENT_HEADER_SIZE + 1));
         for (int j = 0; j < 98 - i; ++j) {
             ASSERT_EQ(
                 result.result_buf[(j + 1) * (SEGMENT_HEADER_SIZE + 1) - 1],
@@ -680,13 +674,7 @@ TEST_F(StorageEngineTests, LogRolloverTruncateActiveSegment) {
     Crash recovery tests
     1. Delete index file -> done
     2. Corrupt index file
-    3. Crash involving rollover
-        1. During rollover but before fsync -> truncate (part of) last
-           record of previous active segment -> done
-        2. During rollover after fsync before write to new active segment ->
-           delete new segment file -> done
-        3. After rollover during write to new active segment ->
-           truncate new log file
+    3. Crash involving rollover -> done
 */
 
 /*
@@ -718,7 +706,7 @@ TEST_F(StorageEngineTests, IndexRW) {
             entry_opt = index.determineClosestIndex(i);
             ASSERT_TRUE(entry_opt.has_value());
             EXPECT_EQ(entry_opt.value().offset, i);
-            // EXPECT_EQ(entry.file_position, file_pos);
+            EXPECT_EQ(entry_opt.value().file_position, file_pos);
             file_pos += 25 * (i % 4 + 1);
         }
     }
