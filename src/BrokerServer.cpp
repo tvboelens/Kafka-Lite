@@ -6,7 +6,6 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <stdexcept>
 #include <system_error>
 #include <variant>
 #include <vector>
@@ -14,17 +13,19 @@
 namespace kafka_lite {
 namespace broker {
 
-TcpResponse makeResponse(uint64_t offset, const std::error_code &ec) {
+TcpResponse TcpConnection::makeResponse(uint64_t offset,
+                                        const std::error_code &ec) {
     return {};
 }
-TcpResponse makeResponse(const FetchResult &result, const std::error_code &ec) {
+TcpResponse TcpConnection::makeResponse(const FetchResult &result,
+                                        const std::error_code &ec) {
     return {};
 }
 
 uint32_t parseLength(std::array<uint8_t, 4> len_header_buf) { return 0; }
 
 std::variant<AppendRequest, FetchRequest>
-parseTcpRequest(const std::vector<uint8_t> &bytes) {}
+TcpConnection::parseTcpRequest(const std::vector<uint8_t> &bytes) {}
 
 std::shared_ptr<TcpConnection>
 TcpConnection::create(boost::asio::io_context &io_context,
@@ -38,13 +39,15 @@ TcpConnection::TcpConnection(boost::asio::io_context &io_context,
       core_(core) {}
 
 void TcpConnection::start() {
-    boost::asio::post(strand_, [self = shared_from_this()]() { self->doReadLengthHeader(); });
+    boost::asio::post(
+        strand_, [self = shared_from_this()]() { self->doReadLengthHeader(); });
 }
 
 void TcpConnection::doReadLengthHeader() {
     boost::asio::async_read(
         socket_, boost::asio::buffer(length_header_buf_),
-        [self = shared_from_this()](boost::system::error_code ec, size_t bytes_read) {
+        [self = shared_from_this()](boost::system::error_code ec,
+                                    size_t bytes_read) {
             if (ec) {
                 self->stop();
                 return;
@@ -58,7 +61,8 @@ void TcpConnection::doReadTcpRequest(uint32_t length) {
     read_buf_.resize(length);
     boost::asio::async_read(
         socket_, boost::asio::buffer(read_buf_),
-        [self = shared_from_this()](boost::system::error_code ec, size_t bytes_read) {
+        [self = shared_from_this()](boost::system::error_code ec,
+                                    size_t bytes_read) {
             if (ec) {
                 self->stop();
                 return;
@@ -91,7 +95,8 @@ void TcpConnection::handleAppendRequest(const AppendRequest &request) {
 
 void TcpConnection::handleFetchRequest(const FetchRequest &request) {
     core_->submit_fetch(
-        request, [self = shared_from_this()](const FetchResult &result, std::error_code ec) {
+        request, [self = shared_from_this()](const FetchResult &result,
+                                             std::error_code ec) {
             boost::asio::post(self->strand_, [self, result, ec]() {
                 TcpResponse response = makeResponse(result, ec);
                 self->sendResponse(response);
@@ -136,23 +141,8 @@ void TcpConnection::stop() {
     stopped_ = true;
     boost::system::error_code ec;
     auto rc = socket_.shutdown(tcp::socket::shutdown_receive, ec);
-    if (!rc) {
-        std::string msg =
-            "Error when shutting down socket, error code: " + ec.to_string();
-        throw std::runtime_error(msg);
-    }
     rc = socket_.shutdown(tcp::socket::shutdown_send, ec);
-    if (!rc) {
-        std::string msg =
-            "Error when shutting down socket, error code: " + ec.to_string();
-        throw std::runtime_error(msg);
-    }
     rc = socket_.close(ec);
-    if (!rc) {
-        std::string msg =
-            "Error when closing socket, error code: " + ec.to_string();
-        throw std::runtime_error(msg);
-    }
 }
 
 BrokerServer::BrokerServer(std::unique_ptr<BrokerCore> &core,
