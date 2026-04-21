@@ -1,0 +1,9 @@
+[package]
+name = "producer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+common = { path = "../common" }
+protocol = { path = "../protocol" }
+tokio = { version = "1.50.0", features = ["full"] }
