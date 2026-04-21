@@ -50,3 +50,7 @@ build
 
 #notes
 kafka_notes.md
+
+# will have compiled files and executables
+rust/debug
+rust/target
