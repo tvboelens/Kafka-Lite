@@ -25,6 +25,7 @@ class BrokerCore {
     void submit_append(const AppendData &data, AppendCallback callback);
     void submit_fetch(const FetchRequest &request, FetchCallback callback);
     void start();
+    void stop();
   private:
     void writerLoop();
     
@@ -33,6 +34,7 @@ class BrokerCore {
     BrokerCoreStatus status_;
     std::thread writer_thread;
     std::atomic_bool stop_;
+    std::atomic_int16_t fetch_calls_counter_;
 };
 } // namespace broker
 } // namespace kafka_lite
