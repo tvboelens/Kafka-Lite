@@ -40,7 +40,8 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection> {
     create(boost::asio::io_context &io_context,
            std::unique_ptr<BrokerCore> &core);
     static std::variant<AppendRequest, FetchRequest>
-    parseTcpRequest(const std::vector<uint8_t> &bytes);
+    parseTcpRequest(const std::vector<uint8_t> &header_bytes,
+                    const std::vector<uint8_t> &payload_bytes);
     static TcpResponse makeResponse(uint64_t offset, const std::error_code &ec);
     static TcpResponse makeResponse(const FetchResult &result,
                                     const std::error_code &ec);
@@ -49,11 +50,12 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection> {
     TcpConnection(boost::asio::io_context &io_context,
                   std::unique_ptr<BrokerCore> &core);
     void stop();
-    void doReadLengthHeader();
-    void handleReadLengthHeader(const boost::system::error_code &ec,
-                                size_t bytes_written);
-    void doReadTcpRequest(uint32_t length);
-    void handleTcpRequest(std::vector<uint8_t> bytes);
+    void doReadHeaderLength();
+    void doReadPayloadLength();
+    void doReadHeaders(uint32_t length);
+    void doReadPayload(uint32_t length);
+    void handleTcpRequest(std::vector<uint8_t> header_bytes,
+                          std::vector<uint8_t> payload_bytes);
     void handleAppendRequest(const AppendRequest &request);
     void handleFetchRequest(const FetchRequest &request);
     void sendResponse(const TcpResponse &response);
@@ -63,8 +65,9 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection> {
     tcp::socket socket_;
     boost::asio::strand<boost::asio::io_context::executor_type> strand_;
     std::queue<TcpResponse> write_queue_;
-    std::array<uint8_t, 4> length_header_buf_;
-    std::vector<uint8_t> read_buf_;
+    std::array<uint8_t, 4> length_buf_;
+    std::vector<uint8_t> header_read_buf_;
+    std::vector<uint8_t> payload_read_buf_;
     std::unique_ptr<BrokerCore> &core_;
     bool write_in_progress_, stopped_;
 };

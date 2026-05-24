@@ -25,7 +25,8 @@ TcpResponse TcpConnection::makeResponse(const FetchResult &result,
 uint32_t parseLength(std::array<uint8_t, 4> len_header_buf) { return 0; }
 
 std::variant<AppendRequest, FetchRequest>
-TcpConnection::parseTcpRequest(const std::vector<uint8_t> &bytes) {}
+TcpConnection::parseTcpRequest(const std::vector<uint8_t> &header_bytes,
+                               const std::vector<uint8_t> &payload_bytes) {}
 
 std::shared_ptr<TcpConnection>
 TcpConnection::create(boost::asio::io_context &io_context,
@@ -40,41 +41,68 @@ TcpConnection::TcpConnection(boost::asio::io_context &io_context,
 
 void TcpConnection::start() {
     boost::asio::post(
-        strand_, [self = shared_from_this()]() { self->doReadLengthHeader(); });
+        strand_, [self = shared_from_this()]() { self->doReadHeaderLength(); });
 }
 
-void TcpConnection::doReadLengthHeader() {
+void TcpConnection::doReadHeaderLength() {
     boost::asio::async_read(
-        socket_, boost::asio::buffer(length_header_buf_),
+        socket_, boost::asio::buffer(length_buf_),
         [self = shared_from_this()](boost::system::error_code ec,
                                     size_t bytes_read) {
             if (ec) {
                 self->stop();
                 return;
             }
-            uint32_t length = parseLength(self->length_header_buf_);
-            self->doReadTcpRequest(length);
+            uint32_t length = parseLength(self->length_buf_);
+            self->doReadHeaders(length);
         });
 }
 
-void TcpConnection::doReadTcpRequest(uint32_t length) {
-    read_buf_.resize(length);
+void TcpConnection::doReadPayloadLength() {
     boost::asio::async_read(
-        socket_, boost::asio::buffer(read_buf_),
+        socket_, boost::asio::buffer(length_buf_),
         [self = shared_from_this()](boost::system::error_code ec,
                                     size_t bytes_read) {
             if (ec) {
                 self->stop();
                 return;
             }
-            std::vector<uint8_t> bytes(self->read_buf_);
-            self->handleTcpRequest(std::move(bytes));
-            self->doReadLengthHeader();
+            uint32_t length = parseLength(self->length_buf_);
+            self->doReadPayload(length);
         });
 }
 
-void TcpConnection::handleTcpRequest(std::vector<uint8_t> bytes) {
-    auto request = parseTcpRequest(bytes);
+void TcpConnection::doReadHeaders(uint32_t length) {
+    header_read_buf_.resize(length);
+    boost::asio::async_read(
+        socket_, boost::asio::buffer(header_read_buf_),
+        [self = shared_from_this()](boost::system::error_code ec,
+                                    size_t bytes_read) {
+            if (ec) {
+                self->stop();
+                return;
+            }
+            self->doReadPayloadLength();
+        });
+}
+
+void TcpConnection::doReadPayload(uint32_t length) {
+    payload_read_buf_.resize(length);
+    boost::asio::async_read(
+        socket_, boost::asio::buffer(payload_read_buf_),
+        [self = shared_from_this()](boost::system::error_code ec,
+                                    size_t bytes_read) {
+            if (ec) {
+                self->stop();
+                return;
+            }
+            self->handleTcpRequest(std::move(self->header_read_buf_), std::move(self->payload_read_buf_));
+        });
+}
+
+void TcpConnection::handleTcpRequest(std::vector<uint8_t> header_bytes,
+                                     std::vector<uint8_t> payload_bytes) {
+    auto request = parseTcpRequest(header_bytes, payload_bytes);
     if (std::holds_alternative<AppendRequest>(request)) {
         handleAppendRequest(std::get<AppendRequest>(request));
     } else {
