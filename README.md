@@ -12,7 +12,6 @@ The broker is written in C++, with supporting components (producer/consumer clie
 - CMake 4.0
 - Boost 1.90 (Boost.Asio for networking and Boost.CRC for checksums)
 - Linux or POSIX-compliant OS, since POSIX calls like `pread` (and many others) are used in the code.
-- Compiling must be done with gcc compiler, since other compilers don't support atomic swaps for shared pointers (use the appropriate values for the `CMAKE_C_COMPILER` and `CMAKE_CXX_COMPILER` flags)
 
 ## Building
 Run 
@@ -20,12 +19,6 @@ Run
 cmake -B build_dir -S repo_dir
 ```
 to build the targets `Broker` and `TestSuite`. As of now `Broker` is not fully functional yet, but the `TestSuite` is.
-
-As mentioned above, it may be necessary to add the flags 
-```
--DCMAKE_CXX_COMPILER=path_to_gcc_compiler
-```
-and similarly for the C compiler if you default compiler is not gcc. Alternatively, alter `CMakeLists.txt` to include the path to your gcc compilers.
 
 Including Boost might prove to be tricky. `CMakeLists.txt` is written for a Boost installation that has Boost.Asio and Boost.CRC as header-only libraries. This is hopefully the case on all platforms, but if not you may need to alter `CMakeLists.txt` to check for certain components in the `find_package` command and might also need to directly link against Boost.Asio and Boost.CRC.
 
