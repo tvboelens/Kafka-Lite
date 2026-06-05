@@ -2,7 +2,6 @@
 #define BROKER_SERVER_HH
 
 #include "BrokerCore.h"
-#include "Log.h"
 #include "Segment.h"
 #include <array>
 #include <boost/asio/io_context.hpp>
@@ -22,14 +21,6 @@ namespace kafka_lite {
 namespace broker {
 
 enum class BrokerServerStatus { Starting, Active, Stopping, Stopped };
-
-struct AppendRequest {
-    std::vector<uint8_t> payload;
-};
-
-struct TcpResponse {
-    std::vector<uint8_t> bytes;
-};
 
 class TcpConnection : public std::enable_shared_from_this<TcpConnection> {
   public:
@@ -51,6 +42,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection> {
                   std::unique_ptr<BrokerCore> &core);
     void stop();
     void doReadHeaderLength();
+    void doReadMagicBytes();
     void doReadPayloadLength();
     void doReadHeaders(uint32_t length);
     void doReadPayload(uint32_t length);
@@ -66,6 +58,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection> {
     boost::asio::strand<boost::asio::io_context::executor_type> strand_;
     std::queue<TcpResponse> write_queue_;
     std::array<uint8_t, 4> length_buf_;
+    std::array<uint8_t, 5> magic_bytes_buf_;
     std::vector<uint8_t> header_read_buf_;
     std::vector<uint8_t> payload_read_buf_;
     std::unique_ptr<BrokerCore> &core_;

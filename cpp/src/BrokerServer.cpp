@@ -1,9 +1,11 @@
 #include "../include/BrokerServer.h"
-#include <algorithm>
+#include "../include/ByteSwap.h"
+#include "../include/TcpProtocol.h"
 #include <array>
 #include <boost/asio.hpp>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <memory>
 #include <system_error>
@@ -12,6 +14,8 @@
 
 namespace kafka_lite {
 namespace broker {
+
+using namespace kafka_lite::byteswap;
 
 TcpResponse TcpConnection::makeResponse(uint64_t offset,
                                         const std::error_code &ec) {
@@ -22,11 +26,22 @@ TcpResponse TcpConnection::makeResponse(const FetchResult &result,
     return {};
 }
 
-uint32_t parseLength(std::array<uint8_t, 4> len_header_buf) { return 0; }
+uint32_t parseLength(std::array<uint8_t, 4> len_header_buf) {
+    uint32_t len;
+    std::memcpy(&len, len_header_buf.data(), sizeof(len));
+    if (!byteswap::is_big_endian())
+        len = byteswap32(len);
+    return len;
+}
 
 std::variant<AppendRequest, FetchRequest>
 TcpConnection::parseTcpRequest(const std::vector<uint8_t> &header_bytes,
-                               const std::vector<uint8_t> &payload_bytes) {}
+                               const std::vector<uint8_t> &payload_bytes) {
+    TcpHeaders headers;
+    headers.from_bytes(header_bytes);
+    TcpRequest request{headers, payload_bytes};
+    return request.to_specialized_type();
+}
 
 std::shared_ptr<TcpConnection>
 TcpConnection::create(boost::asio::io_context &io_context,
@@ -50,6 +65,21 @@ void TcpConnection::doReadHeaderLength() {
         [self = shared_from_this()](boost::system::error_code ec,
                                     size_t bytes_read) {
             if (ec) {
+                self->stop();
+                return;
+            }
+            self->doReadMagicBytes();
+        });
+}
+
+void TcpConnection::doReadMagicBytes() {
+    boost::asio::async_read(
+        socket_, boost::asio::buffer(magic_bytes_buf_),
+        [self = shared_from_this()](boost::system::error_code ec,
+                                    size_t bytes_read) {
+            if (ec ||
+                self->magic_bytes_buf_ !=
+                    std::array<uint8_t, 5>({0x6B, 0x61, 0x66, 0x6B, 0x61})) {
                 self->stop();
                 return;
             }
@@ -96,12 +126,15 @@ void TcpConnection::doReadPayload(uint32_t length) {
                 self->stop();
                 return;
             }
-            self->handleTcpRequest(std::move(self->header_read_buf_), std::move(self->payload_read_buf_));
+            self->handleTcpRequest(std::move(self->header_read_buf_),
+                                   std::move(self->payload_read_buf_));
         });
 }
 
 void TcpConnection::handleTcpRequest(std::vector<uint8_t> header_bytes,
                                      std::vector<uint8_t> payload_bytes) {
+    // here there should be some validation of the request and an error sent
+    // back if invalid
     auto request = parseTcpRequest(header_bytes, payload_bytes);
     if (std::holds_alternative<AppendRequest>(request)) {
         handleAppendRequest(std::get<AppendRequest>(request));
@@ -141,7 +174,7 @@ void TcpConnection::sendResponse(const TcpResponse &response) {
 void TcpConnection::doWrite() {
     write_in_progress_ = true;
     boost::asio::async_write(
-        socket_, boost::asio::buffer(write_queue_.front().bytes),
+        socket_, boost::asio::buffer(write_queue_.front().to_bytes()),
         boost::asio::bind_executor(
             strand_, [self = shared_from_this()](boost::system::error_code ec,
                                                  size_t bytes_written) {
