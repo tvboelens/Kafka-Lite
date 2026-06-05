@@ -1,0 +1,32 @@
+#ifndef BYTE_SWAP_HH
+#define BYTE_SWAP_HH
+
+#include <bit>
+#include <cstdint>
+
+namespace kafka_lite {
+namespace byteswap {
+constexpr bool is_big_endian() {
+    return std::endian::native == std::endian::big;
+}
+
+constexpr uint64_t byteswap64(std::uint64_t value) {
+    return ((value & 0x00000000000000FF) << 56) |
+           ((value & 0x000000000000FF00) << 40) |
+           ((value & 0x0000000000FF0000) << 24) |
+           ((value & 0x00000000FF000000) << 8) |
+           ((value & 0x000000FF00000000) >> 8) |
+           ((value & 0x0000FF0000000000) >> 24) |
+           ((value & 0x00FF000000000000) >> 40) |
+           ((value & 0xFF00000000000000) >> 56);
+}
+
+constexpr uint32_t byteswap32(std::uint32_t value) {
+    return ((value & 0x000000FF) << 24) | ((value & 0x0000FF00) << 8) |
+           ((value & 0x00FF0000) >> 8) | ((value & 0xFF000000) >> 24);
+}
+
+} // namespace byteswap
+} // namespace kafka_lite
+
+#endif

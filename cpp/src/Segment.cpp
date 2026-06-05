@@ -1,5 +1,5 @@
 #include "../include/Segment.h"
-#include <bit>
+#include "../include/ByteSwap.h"
 #include <boost/crc.hpp>
 #include <cstdint>
 #include <cstring>
@@ -12,29 +12,11 @@
 #include <unistd.h>
 #include <vector>
 
-constexpr bool is_big_endian() {
-    return std::endian::native == std::endian::big;
-}
 
-constexpr std::uint32_t byteswap32(std::uint32_t value) {
-    return ((value & 0x000000FF) << 24) | ((value & 0x0000FF00) << 8) |
-           ((value & 0x00FF0000) >> 8) | ((value & 0xFF000000) >> 24);
-}
 
-constexpr std::uint64_t byteswap64(std::uint64_t value) {
-    return ((value & 0x00000000000000FF) << 56) |
-           ((value & 0x000000000000FF00) << 40) |
-           ((value & 0x0000000000FF0000) << 24) |
-           ((value & 0x00000000FF000000) << 8) |
-           ((value & 0x000000FF00000000) >> 8) |
-           ((value & 0x0000FF0000000000) >> 24) |
-           ((value & 0x00FF000000000000) >> 40) |
-           ((value & 0xFF00000000000000) >> 56);
-}
-
-bool write_u32_le(int fd, u_int32_t value) {
-    if (is_big_endian())
-        value = byteswap32(value);
+bool write_u32_le(int fd, uint32_t value) {
+    if (kafka_lite::byteswap::is_big_endian())
+        value = kafka_lite::byteswap::byteswap32(value);
 
     ssize_t curr_write, bytes_written = 0;
     while (bytes_written < sizeof(value)) {
@@ -53,8 +35,8 @@ bool write_u32_le(int fd, u_int32_t value) {
 }
 
 bool write_u64_le(int fd, u_int64_t value) {
-    if (is_big_endian())
-        value = byteswap64(value);
+    if (kafka_lite::byteswap::is_big_endian())
+        value = kafka_lite::byteswap::byteswap64(value);
 
     ssize_t curr_write, bytes_written = 0;
     while (bytes_written < sizeof(value)) {
@@ -74,6 +56,8 @@ bool write_u64_le(int fd, u_int64_t value) {
 
 namespace kafka_lite {
 namespace broker {
+
+using namespace kafka_lite::byteswap;
 
 Segment::Segment(const std::filesystem::path &dir, uint64_t base_offset,
                  uint64_t max_size, SegmentState state)
@@ -278,8 +262,8 @@ uint32_t Segment::determineFilePosition(uint64_t offset,
         if (bytes_read != FILE_POS_INDEX_SIZE)
             throw std::ios_base::failure(
                 "Failed to read length bytes from log file.");
-        if (is_big_endian())
-            record_len = byteswap32(record_len);
+        if (byteswap::is_big_endian())
+            record_len = byteswap::byteswap32(record_len);
         current_file_pos += record_len + SEGMENT_HEADER_SIZE;
     }
     return current_file_pos;
@@ -359,8 +343,8 @@ void Index::append(const IndexFileEntry &data) {
         throw std::ios_base::failure("Failed to write offset to index file.");
     data_.resize(data_.size() + INDEX_ENTRY_SIZE);
     uint64_t value = data.offset;
-    if (is_big_endian())
-        value = byteswap64(value);
+    if (byteswap::is_big_endian())
+        value = byteswap::byteswap64(value);
     std::memcpy(data_.data() + data_.size() - INDEX_ENTRY_SIZE, &value,
                 OFFSET_SIZE);
 
@@ -372,8 +356,8 @@ void Index::append(const IndexFileEntry &data) {
       In binary search we do a byteswap and for active segments we search data_,
       therefore do a byteswap here as well
     */
-    if (is_big_endian())
-        fpos_index = byteswap32(fpos_index);
+    if (byteswap::is_big_endian())
+        fpos_index = byteswap::byteswap32(fpos_index);
     std::memcpy(data_.data() + data_.size() - FILE_POS_INDEX_SIZE, &fpos_index,
                 FILE_POS_INDEX_SIZE);
     last_written_offset_ = data.offset;
@@ -393,26 +377,26 @@ IndexFileEntry Index::binarySearch(uint64_t offset, const char *buf,
 
     // Check if the offset we are seeking is indexed at the start or end
     std::memcpy(&current_offset, L, OFFSET_SIZE);
-    if (is_big_endian())
-        current_offset = byteswap64(current_offset);
+    if (byteswap::is_big_endian())
+        current_offset = byteswap::byteswap64(current_offset);
     if (current_offset == offset) {
         entry.offset = current_offset;
         std::memcpy(&entry.file_position, L + OFFSET_SIZE,
                     sizeof(entry.file_position));
-        if (is_big_endian())
-            entry.file_position = byteswap32(entry.file_position);
+        if (byteswap::is_big_endian())
+            entry.file_position = byteswap::byteswap32(entry.file_position);
         return entry;
     }
 
     std::memcpy(&current_offset, R, sizeof(current_offset));
-    if (is_big_endian())
-        current_offset = byteswap64(current_offset);
+    if (byteswap::is_big_endian())
+        current_offset = byteswap::byteswap64(current_offset);
     if (current_offset == offset) {
         entry.offset = current_offset;
         std::memcpy(&entry.file_position, R + OFFSET_SIZE,
                     sizeof(entry.file_position));
-        if (is_big_endian())
-            entry.file_position = byteswap32(entry.file_position);
+        if (byteswap::is_big_endian())
+            entry.file_position = byteswap::byteswap32(entry.file_position);
         return entry;
     }
 
@@ -421,8 +405,8 @@ IndexFileEntry Index::binarySearch(uint64_t offset, const char *buf,
     while (L < R) {
         M = L + INDEX_ENTRY_SIZE * (diff / 2 + 1);
         std::memcpy(&current_offset, M, sizeof(current_offset));
-        if (is_big_endian())
-            current_offset = byteswap64(current_offset);
+        if (byteswap::is_big_endian())
+            current_offset = byteswap::byteswap64(current_offset);
         if (current_offset <= offset) {
             L = M;
             diff -= (diff / 2 + 1);
@@ -434,9 +418,9 @@ IndexFileEntry Index::binarySearch(uint64_t offset, const char *buf,
 
     std::memcpy(&entry.offset, L, sizeof(entry.offset));
     std::memcpy(&entry.file_position, L + OFFSET_SIZE, FILE_POS_INDEX_SIZE);
-    if (is_big_endian()) {
-        entry.offset = byteswap64(entry.offset);
-        entry.file_position = byteswap32(entry.file_position);
+    if (byteswap::is_big_endian()) {
+        entry.offset = byteswap::byteswap64(entry.offset);
+        entry.file_position = byteswap::byteswap32(entry.file_position);
     }
     return entry;
 }
@@ -512,8 +496,8 @@ RecoveryResult Segment::recover() {
             throw std::ios_base::failure(
                 "Failed to read record length from log file.");
         }
-        if (is_big_endian())
-            byteswap32(record_len);
+        if (byteswap::is_big_endian())
+            byteswap::byteswap32(record_len);
 
         // read record checksum
         uint32_t read_checksum;
@@ -539,8 +523,8 @@ RecoveryResult Segment::recover() {
             throw std::ios_base::failure(
                 "Failed to read record checksum from log file.");
         }
-        if (is_big_endian())
-            byteswap32(read_checksum);
+        if (byteswap::is_big_endian())
+            byteswap::byteswap32(read_checksum);
 
         // read record payload
         record_payload.resize(record_len - sizeof(uint32_t));
