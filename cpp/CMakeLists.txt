@@ -1,8 +1,6 @@
 cmake_minimum_required(VERSION 4.0)
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_C_COMPILER /opt/homebrew/bin/gcc-15)
-set(CMAKE_CXX_COMPILER /opt/homebrew/bin/g++-15)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 project(Kafka-Lite LANGUAGES C CXX)
@@ -25,12 +23,14 @@ set(BROKER_LIB_SOURCES
     src/AppendQueue.cpp
     src/BrokerCore.cpp
 	src/BrokerServer.cpp
+    src/TcpProtocol.cpp
 )
 
 set(TEST_SOURCES
     tests/BrokerCoreTests.cpp
     tests/BrokerServerTests.cpp
     tests/StorageEngineTests.cpp
+    tests/TcpProtocolTests.cpp
 )
 
 
