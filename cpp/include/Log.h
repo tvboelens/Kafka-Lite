@@ -2,6 +2,7 @@
 #define LOG_H
 
 #include "Segment.h"
+#include "TcpProtocol.h"
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -10,10 +11,6 @@
 
 namespace kafka_lite {
 namespace broker {
-struct FetchRequest {
-    uint64_t offset;
-    size_t max_bytes;
-};
 
 struct AppendData {
     std::vector<uint8_t> data;
@@ -46,8 +43,8 @@ class Log {
     uint64_t max_segment_size_;
     std::shared_ptr<Segment> findSegment(uint64_t offset) const;
     std::vector<std::shared_ptr<Segment>> sealed_segments_;
-    std::atomic<std::shared_ptr<Segment>> active_segment_;
-    mutable std::shared_mutex sealed_segments_mutex_;
+    std::shared_ptr<Segment> active_segment_;
+    mutable std::shared_mutex segments_mutex_;
 };
 } // namespace broker
 } // namespace kafka_lite

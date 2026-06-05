@@ -1,6 +1,5 @@
 #include "../include/Log.h"
 #include <algorithm>
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -13,7 +12,8 @@ namespace kafka_lite {
 namespace broker {
 
 Log::Log(const std::filesystem::path &dir, uint64_t max_segment_size)
-    : status_(LogStatus::Closed), dir_(dir), max_segment_size_(max_segment_size) {}
+    : status_(LogStatus::Closed), dir_(dir),
+      max_segment_size_(max_segment_size) {}
 
 void Log::start() {
     std::filesystem::create_directories(dir_);
@@ -21,9 +21,8 @@ void Log::start() {
     if (!paths.empty())
         recover(paths);
     else {
-        std::shared_ptr<Segment> segment = std::make_shared<Segment>(
-            dir_, 0, max_segment_size_, SegmentState::Active);
-        active_segment_.store(segment);
+        active_segment_ = std::make_shared<Segment>(dir_, 0, max_segment_size_,
+                                                    SegmentState::Active);
     }
     status_ = LogStatus::Open;
 }
@@ -56,7 +55,7 @@ void Log::recover(const std::vector<std::string> &segment_filenames) {
         auto result = segment->recover();
         if (it + 1 == base_offsets.end() ||
             result != RecoveryResult::Recovered) {
-            active_segment_.store(segment, std::memory_order_seq_cst);
+            active_segment_ = segment;
             if (result != RecoveryResult::Recovered)
                 break;
         } else {
@@ -85,7 +84,7 @@ FetchResult Log::fetch(const FetchRequest &request) const {
                     temp_result.result_buf.size());
         curr_offset = segment->getPublishedOffset() + 1;
     } while (result.result_buf.size() < request.max_bytes &&
-             segment != active_segment_.load(std::memory_order_acquire));
+             segment != active_segment_);
     return result;
 }
 
@@ -94,18 +93,14 @@ uint64_t Log::append(const AppendData &data) {
         throw std::logic_error("Writing to log requires status open.");
     if (activeSegmentIsFull())
         rollover();
-    auto active_segment = active_segment_.load(std::memory_order_acquire);
     uint64_t offset =
-        active_segment->append(data.data.data(), data.data.size());
+        active_segment_->append(data.data.data(), data.data.size());
     return offset;
 }
 
 void Log::rollover() {
-    uint64_t old_base_offset = active_segment_.load(std::memory_order_relaxed)
-                                   ->getBaseOffset(),
-             new_base_offset = active_segment_.load(std::memory_order_relaxed)
-                                   ->getPublishedOffset() +
-                               1;
+    uint64_t old_base_offset = active_segment_->getBaseOffset(),
+             new_base_offset = active_segment_->getPublishedOffset() + 1;
 
     auto next_active_segment = std::make_shared<Segment>(
              dir_, new_base_offset, max_segment_size_, SegmentState::Active),
@@ -114,26 +109,23 @@ void Log::rollover() {
              SegmentState::Sealed);
 
     {
-        std::unique_lock<std::shared_mutex> lock(sealed_segments_mutex_);
+        std::unique_lock<std::shared_mutex> lock(segments_mutex_);
         sealed_segments_.push_back(sealed_segment);
+        /*
+            Let previous active segment go out of scope. Once all reader threads
+            are done no shared ptr with a reference to it will exist and the
+            destructor will clean up. The swap and implementation of
+            findSegment ensure that no new thread will read from previous active
+            segment.
+        */
+        active_segment_.swap(next_active_segment);
     }
-    /*
-       Let previous active segment go out of scope. Once all reader threads
-       are done no shared ptr with a reference to it will exist and the
-       destructor will clean up. The atomic swap and implementation of
-       findSegment ensure that no new thread will read from previous active
-       segment.
-    */
-    auto previous_active_segment = active_segment_.exchange(
-        next_active_segment, std::memory_order_release);
 }
 
 std::shared_ptr<Segment> Log::findSegment(uint64_t offset) const {
-    /**/
-    std::shared_lock<std::shared_mutex> lock(sealed_segments_mutex_);
-    auto active_segment = active_segment_.load(std::memory_order_acquire);
-    if (sealed_segments_.empty() || active_segment->getBaseOffset() <= offset)
-        return active_segment;
+    std::shared_lock<std::shared_mutex> lock(segments_mutex_);
+    if (sealed_segments_.empty() || active_segment_->getBaseOffset() <= offset)
+        return active_segment_;
     auto it = sealed_segments_.begin();
     while (it != sealed_segments_.end() &&
            it->get()->getBaseOffset() <= offset) {
@@ -144,14 +136,12 @@ std::shared_ptr<Segment> Log::findSegment(uint64_t offset) const {
 
 uint64_t Log::getPublishedOffset() {
     if (status_ != LogStatus::Open)
-        throw std::logic_error("Getting public status from log requires status open.");
-    auto active_segment = active_segment_.load(std::memory_order_acquire);
-    return active_segment->getPublishedOffset();
+        throw std::logic_error(
+            "Getting published offset from log requires status open.");
+    return active_segment_->getPublishedOffset();
 }
 
-bool Log::activeSegmentIsFull() {
-    return active_segment_.load(std::memory_order_acquire)->isFull();
-}
+bool Log::activeSegmentIsFull() { return active_segment_->isFull(); }
 
 } // namespace broker
 } // namespace kafka_lite
