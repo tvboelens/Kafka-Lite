@@ -23,7 +23,7 @@ class BrokerCore {
     ~BrokerCore();
 
     void submit_append(const AppendData &data, AppendCallback callback);
-    void submit_fetch(const FetchRequest &request, FetchCallback callback);
+    void submit_fetch(const FetchData &data, FetchCallback callback);
     void start();
     void stop();
   private:

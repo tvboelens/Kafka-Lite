@@ -2,7 +2,6 @@
 #define LOG_H
 
 #include "Segment.h"
-#include "TcpProtocol.h"
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -14,6 +13,11 @@ namespace broker {
 
 struct AppendData {
     std::vector<uint8_t> data;
+};
+
+struct FetchData {
+    uint64_t offset;
+    size_t max_bytes;
 };
 
 enum class LogStatus {Open, Closed};
@@ -28,7 +32,7 @@ class Log {
     ~Log() = default; // Do I need more?
 
     void start();
-    FetchResult fetch(const FetchRequest &request) const;
+    FetchResult fetch(const FetchData &data) const;
     uint64_t append(const AppendData &data);
     void rollover();
     uint64_t getPublishedOffset();

@@ -1,5 +1,4 @@
 #include "../include/BrokerCore.h"
-#include "../include/TcpProtocol.h"
 #include <atomic>
 #include <cstdint>
 #include <exception>
@@ -52,7 +51,7 @@ void BrokerCore::submit_append(const AppendData &data,
     append_queue_.push(job);
 }
 
-void BrokerCore::submit_fetch(const FetchRequest &request,
+void BrokerCore::submit_fetch(const FetchData &data,
                               FetchCallback callback) {
     auto counter = fetch_calls_counter_.fetch_add(1, std::memory_order_acq_rel);
     if (status_ == BrokerCoreStatus::Stopping ||
@@ -69,7 +68,7 @@ void BrokerCore::submit_fetch(const FetchRequest &request,
     std::error_code ec;
     FetchResult result;
     try {
-        result = append_log_.fetch(request);
+        result = append_log_.fetch(data);
     } catch (const std::exception &e) {
         ec = make_error_code(std::errc::io_error);
     }

@@ -151,13 +151,13 @@ TEST_F(StorageEngineTests, LogReadWrite) {
     log.start();
 
     std::vector<uint64_t> offsets;
-    AppendData data;
-    data.data.push_back(2);
-    auto offset = log.append(data);
-    FetchRequest request;
-    request.offset = offset;
-    request.max_bytes = 2 * (SEGMENT_HEADER_SIZE + 1);
-    auto result = log.fetch(request);
+    AppendData append_data;
+    append_data.data.push_back(2);
+    auto offset = log.append(append_data);
+    FetchData fetch_data;
+    fetch_data.offset = offset;
+    fetch_data.max_bytes = 2 * (SEGMENT_HEADER_SIZE + 1);
+    auto result = log.fetch(fetch_data);
     ASSERT_EQ(result.result_buf.size(), SEGMENT_HEADER_SIZE + 1);
     ASSERT_EQ(result.result_buf[SEGMENT_HEADER_SIZE], 2);
 }
@@ -168,21 +168,21 @@ TEST_F(StorageEngineTests, LogReadWriteRollover) {
     log.start();
 
     std::vector<uint64_t> offsets;
-    AppendData data;
+    AppendData append_data;
     int i;
     for (i = 0; i < 98; ++i) {
-        data.data.clear();
-        data.data.push_back(i);
-        auto offset = log.append(data);
+        append_data.data.clear();
+        append_data.data.push_back(i);
+        auto offset = log.append(append_data);
         offsets.push_back(offset);
         ASSERT_EQ(offset, i);
     }
 
-    FetchRequest request;
+    FetchData fetch_data;
     for (i = 0; i < 98; ++i) {
-        request.offset = i;
-        request.max_bytes = 100 * (SEGMENT_HEADER_SIZE + 1);
-        auto result = log.fetch(request);
+        fetch_data.offset = i;
+        fetch_data.max_bytes = 100 * (SEGMENT_HEADER_SIZE + 1);
+        auto result = log.fetch(fetch_data);
         ASSERT_EQ(result.result_buf.size(),
                   (98 - i) * (SEGMENT_HEADER_SIZE + 1));
         for (int j = 0; j < 98 - i; ++j) {
@@ -197,7 +197,7 @@ TEST_F(StorageEngineTests, LogReadWriteNonActive) {
     std::filesystem::path dir = getDir() / "LogReadNonActive";
     Log log(dir, 4 * (SEGMENT_HEADER_SIZE + 1));
     EXPECT_ANY_THROW(log.append({}));
-    EXPECT_ANY_THROW(log.fetch({0, 32}));
+    EXPECT_ANY_THROW(log.fetch({ 0, 32}));
 }
 
 using crc32c_type =
@@ -211,18 +211,18 @@ TEST_F(StorageEngineTests, LogCleanRecovery) {
         Log log(dir, 4 * (SEGMENT_HEADER_SIZE + 1));
         log.start();
         std::vector<uint64_t> offsets;
-        AppendData data;
+        AppendData append_data;
         for (uint8_t i = 0; i < 98; ++i) {
             crc32c.process_byte(i);
             uint32_t checksum = crc32c.checksum();
-            data.data.clear();
-            data.data.resize(sizeof(uint32_t));
+            append_data.data.clear();
+            append_data.data.resize(sizeof(uint32_t));
             if (is_big_endian())
                 byteswap32(checksum);
             checksums.push_back(checksum);
-            std::memcpy(data.data.data(), &checksum, sizeof(uint32_t));
-            data.data.push_back(i);
-            auto offset = log.append(data);
+            std::memcpy(append_data.data.data(), &checksum, sizeof(uint32_t));
+            append_data.data.push_back(i);
+            auto offset = log.append(append_data);
             offsets.push_back(offset);
             ASSERT_EQ(offset, i);
             crc32c.reset();
@@ -231,12 +231,12 @@ TEST_F(StorageEngineTests, LogCleanRecovery) {
 
     Log log(dir, 4 * (SEGMENT_HEADER_SIZE + 1));
     log.start();
-    FetchRequest request;
+    FetchData fetch_data;
     uint32_t checksum;
     for (uint8_t i = 0; i < 98; ++i) {
-        request.offset = i;
-        request.max_bytes = 500 * (SEGMENT_HEADER_SIZE + 1);
-        auto result = log.fetch(request);
+        fetch_data.offset = i;
+        fetch_data.max_bytes = 500 * (SEGMENT_HEADER_SIZE + 1);
+        auto result = log.fetch(fetch_data);
         ASSERT_EQ(result.result_buf.size(),
                   (98 - i) * (SEGMENT_HEADER_SIZE + 1 + sizeof(uint32_t)));
         for (int j = 0; j < 98 - i; ++j) {
@@ -264,18 +264,18 @@ TEST_F(StorageEngineTests, LogRecoveryEmptySegment) {
         Log log(dir, 500);
         log.start();
         std::vector<uint64_t> offsets;
-        AppendData data;
+        AppendData append_data;
         for (uint8_t i = 0; i < 3; ++i) {
             crc32c.process_byte(i);
             uint32_t checksum = crc32c.checksum();
-            data.data.clear();
-            data.data.resize(sizeof(uint32_t));
+            append_data.data.clear();
+            append_data.data.resize(sizeof(uint32_t));
             if (is_big_endian())
                 byteswap32(checksum);
             checksums.push_back(checksum);
-            std::memcpy(data.data.data(), &checksum, sizeof(uint32_t));
-            data.data.push_back(i);
-            auto offset = log.append(data);
+            std::memcpy(append_data.data.data(), &checksum, sizeof(uint32_t));
+            append_data.data.push_back(i);
+            auto offset = log.append(append_data);
             offsets.push_back(offset);
             ASSERT_EQ(offset, i);
             crc32c.reset();
@@ -292,7 +292,7 @@ TEST_F(StorageEngineTests, LogRecoveryEmptySegment) {
     append_data.data.push_back(5);
     auto offset = log.append(append_data);
     ASSERT_EQ(offset, 0);
-    FetchRequest req{0, 50};
+    FetchData req{0, 50};
     auto result = log.fetch(req);
     ASSERT_EQ(result.result_buf.size(), SEGMENT_HEADER_SIZE + 1);
     ASSERT_EQ(result.result_buf[result.result_buf.size()-1], 5);
@@ -307,12 +307,12 @@ TEST_F(StorageEngineTests, LogTruncateMidRecord) {
     {
         Log log(dir, 1024);
         log.start();
-        AppendData data;
+        AppendData append_data;
         std::vector<uint8_t> buf;
         for (int i = 0; i < 4; ++i) {
-            data.data.clear();
+            append_data.data.clear();
             buf.clear();
-            data.data.resize(sizeof(uint32_t));
+            append_data.data.resize(sizeof(uint32_t));
             for (uint8_t j = 0; j < 10; ++j) {
                 buf.push_back((j * j) % i);
             }
@@ -321,11 +321,11 @@ TEST_F(StorageEngineTests, LogTruncateMidRecord) {
             if (is_big_endian())
                 byteswap32(checksum);
             checksums.push_back(checksum);
-            std::memcpy(data.data.data(), &checksum, sizeof(uint32_t));
+            std::memcpy(append_data.data.data(), &checksum, sizeof(uint32_t));
             for (const auto &byte : buf) {
-                data.data.push_back(byte);
+                append_data.data.push_back(byte);
             }
-            auto offset = log.append(data);
+            auto offset = log.append(append_data);
             offsets.push_back(offset);
             ASSERT_EQ(offset, i);
             crc32c.reset();
@@ -341,11 +341,11 @@ TEST_F(StorageEngineTests, LogTruncateMidRecord) {
     log.start();
 
     ASSERT_EQ(log.getPublishedOffset(), offsets[offsets.size() - 2]);
-    FetchRequest request;
+    FetchData fetch_data;
     uint32_t checksum;
-    request.offset = 0;
-    request.max_bytes = 500;
-    auto result = log.fetch(request);
+    fetch_data.offset = 0;
+    fetch_data.max_bytes = 500;
+    auto result = log.fetch(fetch_data);
     ASSERT_EQ(result.result_buf.size(),
               3 * (SEGMENT_HEADER_SIZE + 10 + sizeof(uint32_t)));
     for (int i = 0; i < 3; ++i) {
@@ -376,12 +376,12 @@ TEST_F(StorageEngineTests, LogTruncateRecordBoundary) {
     {
         Log log(dir, 1024);
         log.start();
-        AppendData data;
+        AppendData append_data;
         std::vector<uint8_t> buf;
         for (int i = 0; i < 4; ++i) {
-            data.data.clear();
+            append_data.data.clear();
             buf.clear();
-            data.data.resize(sizeof(uint32_t));
+            append_data.data.resize(sizeof(uint32_t));
             for (uint8_t j = 0; j < 10; ++j) {
                 buf.push_back((j * j) % i);
             }
@@ -390,13 +390,13 @@ TEST_F(StorageEngineTests, LogTruncateRecordBoundary) {
             if (is_big_endian())
                 byteswap32(checksum);
             checksums.push_back(checksum);
-            std::memcpy(data.data.data(), &checksum, sizeof(uint32_t));
+            std::memcpy(append_data.data.data(), &checksum, sizeof(uint32_t));
             for (const auto &byte : buf) {
-                data.data.push_back(byte);
+                append_data.data.push_back(byte);
             }
-            auto offset = log.append(data);
+            auto offset = log.append(append_data);
             if (i != 3)
-                truncate_pos += (data.data.size() + SEGMENT_HEADER_SIZE);
+                truncate_pos += (append_data.data.size() + SEGMENT_HEADER_SIZE);
             offsets.push_back(offset);
             ASSERT_EQ(offset, i);
             crc32c.reset();
@@ -411,11 +411,11 @@ TEST_F(StorageEngineTests, LogTruncateRecordBoundary) {
     log.start();
 
     ASSERT_EQ(log.getPublishedOffset(), offsets[offsets.size() - 2]);
-    FetchRequest request;
+    FetchData fetch_data;
     uint32_t checksum;
-    request.offset = 0;
-    request.max_bytes = 500;
-    auto result = log.fetch(request);
+    fetch_data.offset = 0;
+    fetch_data.max_bytes = 500;
+    auto result = log.fetch(fetch_data);
     ASSERT_EQ(result.result_buf.size(),
               3 * (SEGMENT_HEADER_SIZE + 10 + sizeof(uint32_t)));
     for (int i = 0; i < 3; ++i) {
@@ -446,12 +446,12 @@ TEST_F(StorageEngineTests, LogRecoveryNoIndex) {
     {
         Log log(dir, 1024);
         log.start();
-        AppendData data;
+        AppendData append_data;
         std::vector<uint8_t> buf;
         for (int i = 0; i < 4; ++i) {
-            data.data.clear();
+            append_data.data.clear();
             buf.clear();
-            data.data.resize(sizeof(uint32_t));
+            append_data.data.resize(sizeof(uint32_t));
             for (uint8_t j = 0; j < 10; ++j) {
                 buf.push_back((j * j) % i);
             }
@@ -460,11 +460,11 @@ TEST_F(StorageEngineTests, LogRecoveryNoIndex) {
             if (is_big_endian())
                 byteswap32(checksum);
             checksums.push_back(checksum);
-            std::memcpy(data.data.data(), &checksum, sizeof(uint32_t));
+            std::memcpy(append_data.data.data(), &checksum, sizeof(uint32_t));
             for (const auto &byte : buf) {
-                data.data.push_back(byte);
+                append_data.data.push_back(byte);
             }
-            auto offset = log.append(data);
+            auto offset = log.append(append_data);
             offsets.push_back(offset);
             ASSERT_EQ(offset, i);
             crc32c.reset();
@@ -479,11 +479,11 @@ TEST_F(StorageEngineTests, LogRecoveryNoIndex) {
     log.start();
 
     ASSERT_EQ(log.getPublishedOffset(), offsets[offsets.size() - 1]);
-    FetchRequest request;
+    FetchData fetch_data;
     uint32_t checksum;
-    request.offset = 0;
-    request.max_bytes = 500;
-    auto result = log.fetch(request);
+    fetch_data.offset = 0;
+    fetch_data.max_bytes = 500;
+    auto result = log.fetch(fetch_data);
     ASSERT_EQ(result.result_buf.size(),
               4 * (SEGMENT_HEADER_SIZE + 10 + sizeof(uint32_t)));
     for (int i = 0; i < 4; ++i) {
@@ -527,13 +527,13 @@ TEST_F(StorageEngineTests, LogRecoveryAfterRolloverFsync) {
     {
         Log log(dir, 32);
         log.start();
-        AppendData data;
+        AppendData append_data;
         std::vector<uint8_t> buf;
         int i = 0;
         while (base_offsets.size() < 2) {
-            data.data.clear();
+            append_data.data.clear();
             buf.clear();
-            data.data.resize(sizeof(uint32_t));
+            append_data.data.resize(sizeof(uint32_t));
             for (uint8_t j = 0; j < 10; ++j) {
                 buf.push_back((j * j) % i);
             }
@@ -542,11 +542,11 @@ TEST_F(StorageEngineTests, LogRecoveryAfterRolloverFsync) {
             if (is_big_endian())
                 byteswap32(checksum);
             checksums.push_back(checksum);
-            std::memcpy(data.data.data(), &checksum, sizeof(uint32_t));
+            std::memcpy(append_data.data.data(), &checksum, sizeof(uint32_t));
             for (const auto &byte : buf) {
-                data.data.push_back(byte);
+                append_data.data.push_back(byte);
             }
-            auto offset = log.append(data);
+            auto offset = log.append(append_data);
             offsets.push_back(offset);
             ASSERT_EQ(offset, i);
             crc32c.reset();
@@ -567,11 +567,11 @@ TEST_F(StorageEngineTests, LogRecoveryAfterRolloverFsync) {
     ASSERT_EQ(getSortedBaseOffsets(dir).size(), 2);
     ASSERT_TRUE(std::filesystem::is_empty(log_file));
     ASSERT_EQ(log.getPublishedOffset(), offsets[offsets.size() - 2]);
-    FetchRequest request;
+    FetchData fetch_data;
     uint32_t checksum;
-    request.offset = 0;
-    request.max_bytes = 500;
-    auto result = log.fetch(request);
+    fetch_data.offset = 0;
+    fetch_data.max_bytes = 500;
+    auto result = log.fetch(fetch_data);
     ASSERT_EQ(result.result_buf.size(),
               (offsets.size() - 1) *
                   (SEGMENT_HEADER_SIZE + 10 + sizeof(uint32_t)));
@@ -603,13 +603,13 @@ TEST_F(StorageEngineTests, LogRolloverTruncateActiveSegment) {
     {
         Log log(dir, 32);
         log.start();
-        AppendData data;
+        AppendData append_data;
         std::vector<uint8_t> buf;
         int i = 0;
         while (base_offsets.size() < 2) {
-            data.data.clear();
+            append_data.data.clear();
             buf.clear();
-            data.data.resize(sizeof(uint32_t));
+            append_data.data.resize(sizeof(uint32_t));
             for (uint8_t j = 0; j < 10; ++j) {
                 buf.push_back((j * j) % i);
             }
@@ -618,11 +618,11 @@ TEST_F(StorageEngineTests, LogRolloverTruncateActiveSegment) {
             if (is_big_endian())
                 byteswap32(checksum);
             checksums.push_back(checksum);
-            std::memcpy(data.data.data(), &checksum, sizeof(uint32_t));
+            std::memcpy(append_data.data.data(), &checksum, sizeof(uint32_t));
             for (const auto &byte : buf) {
-                data.data.push_back(byte);
+                append_data.data.push_back(byte);
             }
-            auto offset = log.append(data);
+            auto offset = log.append(append_data);
             offsets.push_back(offset);
             ASSERT_EQ(offset, i);
             crc32c.reset();
@@ -644,11 +644,11 @@ TEST_F(StorageEngineTests, LogRolloverTruncateActiveSegment) {
     ASSERT_TRUE(std::filesystem::is_empty(log_file));
 
     ASSERT_EQ(log.getPublishedOffset(), offsets[offsets.size() - 2]);
-    FetchRequest request;
+    FetchData fetch_data;
     uint32_t checksum;
-    request.offset = 0;
-    request.max_bytes = 500;
-    auto result = log.fetch(request);
+    fetch_data.offset = 0;
+    fetch_data.max_bytes = 500;
+    auto result = log.fetch(fetch_data);
     ASSERT_EQ(result.result_buf.size(),
               (offsets.size() - 1) *
                   (SEGMENT_HEADER_SIZE + 10 + sizeof(uint32_t)));

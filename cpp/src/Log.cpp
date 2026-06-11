@@ -65,16 +65,16 @@ void Log::recover(const std::vector<std::string> &segment_filenames) {
     }
 }
 
-FetchResult Log::fetch(const FetchRequest &request) const {
+FetchResult Log::fetch(const FetchData &data) const {
     if (status_ != LogStatus::Open)
         throw std::logic_error("Reading from log requires status open.");
     FetchResult result, temp_result;
-    uint64_t curr_offset = request.offset;
-    size_t curr_result_size, curr_max_bytes = request.max_bytes;
+    uint64_t curr_offset = data.offset;
+    size_t curr_result_size, curr_max_bytes = data.max_bytes;
     std::shared_ptr<Segment> segment;
     do {
         segment = findSegment(curr_offset);
-        temp_result = segment->read(request.offset, curr_max_bytes);
+        temp_result = segment->read(data.offset, curr_max_bytes);
         curr_result_size = result.result_buf.size();
         curr_max_bytes -= temp_result.result_buf.size();
         result.result_buf.resize(curr_result_size +
@@ -83,7 +83,7 @@ FetchResult Log::fetch(const FetchRequest &request) const {
                     temp_result.result_buf.data(),
                     temp_result.result_buf.size());
         curr_offset = segment->getPublishedOffset() + 1;
-    } while (result.result_buf.size() < request.max_bytes &&
+    } while (result.result_buf.size() < data.max_bytes &&
              segment != active_segment_);
     return result;
 }
