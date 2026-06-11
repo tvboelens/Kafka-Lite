@@ -2,7 +2,7 @@
 #define BROKER_SERVER_HH
 
 #include "BrokerCore.h"
-#include "Segment.h"
+#include "TcpProtocol.h"
 #include <array>
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/tcp.hpp>
@@ -11,7 +11,6 @@
 #include <cstdint>
 #include <memory>
 #include <queue>
-#include <system_error>
 #include <variant>
 #include <vector>
 
@@ -31,11 +30,8 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection> {
     create(boost::asio::io_context &io_context,
            std::unique_ptr<BrokerCore> &core);
     static std::variant<AppendRequest, FetchRequest>
-    parseTcpRequest(const std::vector<uint8_t> &header_bytes,
+    parseTcpRequest(const TcpHeaders &headers,
                     const std::vector<uint8_t> &payload_bytes);
-    static TcpResponse makeResponse(uint64_t offset, const std::error_code &ec);
-    static TcpResponse makeResponse(const FetchResult &result,
-                                    const std::error_code &ec);
 
   private:
     TcpConnection(boost::asio::io_context &io_context,

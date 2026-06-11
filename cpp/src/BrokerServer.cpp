@@ -17,15 +17,6 @@ namespace broker {
 
 using namespace kafka_lite::byteswap;
 
-TcpResponse TcpConnection::makeResponse(uint64_t offset,
-                                        const std::error_code &ec) {
-    return {};
-}
-TcpResponse TcpConnection::makeResponse(const FetchResult &result,
-                                        const std::error_code &ec) {
-    return {};
-}
-
 uint32_t parseLength(std::array<uint8_t, 4> len_header_buf) {
     uint32_t len;
     std::memcpy(&len, len_header_buf.data(), sizeof(len));
@@ -35,10 +26,8 @@ uint32_t parseLength(std::array<uint8_t, 4> len_header_buf) {
 }
 
 std::variant<AppendRequest, FetchRequest>
-TcpConnection::parseTcpRequest(const std::vector<uint8_t> &header_bytes,
+TcpConnection::parseTcpRequest(const TcpHeaders &headers,
                                const std::vector<uint8_t> &payload_bytes) {
-    TcpHeaders headers;
-    headers.from_bytes(header_bytes);
     TcpRequest request{headers, payload_bytes};
     return request.to_specialized_type();
 }
@@ -135,7 +124,14 @@ void TcpConnection::handleTcpRequest(std::vector<uint8_t> header_bytes,
                                      std::vector<uint8_t> payload_bytes) {
     // here there should be some validation of the request and an error sent
     // back if invalid
-    auto request = parseTcpRequest(header_bytes, payload_bytes);
+    TcpHeaders headers;
+    if (!headers.from_bytes(header_bytes)) {
+        auto response = TcpResponse::createErrorResponse(headers.correlation_id,
+                                                         headers.parse_error);
+        sendResponse(response);
+        return;
+    }
+    auto request = parseTcpRequest(headers, payload_bytes);
     if (std::holds_alternative<AppendRequest>(request)) {
         handleAppendRequest(std::get<AppendRequest>(request));
     } else {
@@ -146,20 +142,21 @@ void TcpConnection::handleTcpRequest(std::vector<uint8_t> header_bytes,
 void TcpConnection::handleAppendRequest(const AppendRequest &request) {
     AppendData data{request.payload};
     core_->submit_append(
-        data, [self = shared_from_this()](uint64_t offset, std::error_code ec) {
-            boost::asio::post(self->strand_, [self, offset, ec]() {
-                TcpResponse response = makeResponse(offset, ec);
+        data, [self = shared_from_this(), cor_id = request.correlation_id](uint64_t offset, std::error_code ec) {
+            boost::asio::post(self->strand_, [self, cor_id, offset, ec]() {
+                TcpResponse response = TcpResponse::makeResponse(cor_id, offset, ec);
                 self->sendResponse(response);
             });
         });
 }
 
 void TcpConnection::handleFetchRequest(const FetchRequest &request) {
+    FetchData data{.offset = request.offset, .max_bytes = request.max_bytes};
     core_->submit_fetch(
-        request, [self = shared_from_this()](const FetchResult &result,
+        data, [self = shared_from_this(), cor_id = request.correlation_id](const FetchResult &result,
                                              std::error_code ec) {
-            boost::asio::post(self->strand_, [self, result, ec]() {
-                TcpResponse response = makeResponse(result, ec);
+            boost::asio::post(self->strand_, [self, cor_id, result, ec]() {
+                TcpResponse response = TcpResponse::makeResponse(cor_id, result, ec);
                 self->sendResponse(response);
             });
         });
