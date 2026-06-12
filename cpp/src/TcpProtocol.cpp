@@ -14,6 +14,11 @@ namespace broker {
 
 using namespace kafka_lite::byteswap;
 
+TcpHeaders::TcpHeaders(const uuid &correlation_id, uint8_t ptcl_version,
+                       RequestType type, uint16_t flags)
+    : correlation_id(correlation_id), protocol_version(ptcl_version),
+      type(type), flags(flags), parse_error(ParseError::NO_ERROR) {}
+
 bool TcpHeaders::from_bytes(const std::vector<uint8_t> &bytes) {
     if (bytes.size() < correlation_id.size() + 4) {
         parse_error = ParseError::ERR_MISSING_CORRELATION_ID;
@@ -56,7 +61,8 @@ bool TcpHeaders::from_bytes(const std::vector<uint8_t> &bytes) {
 std::variant<AppendRequest, FetchRequest> TcpRequest::to_specialized_type() {
     switch (headers.type) {
     case RequestType::Append:
-        return AppendRequest{.correlation_id = headers.correlation_id, .payload = payload};
+        return AppendRequest{.correlation_id = headers.correlation_id,
+                             .payload = payload};
     case RequestType::Fetch:
         uint64_t offset;
         std::memcpy(&offset, payload.data(), sizeof(offset));
@@ -65,7 +71,9 @@ std::variant<AppendRequest, FetchRequest> TcpRequest::to_specialized_type() {
         uint32_t max_bytes;
         std::memcpy(&offset, payload.data() + sizeof(offset),
                     sizeof(max_bytes));
-        return FetchRequest{.correlation_id = headers.correlation_id, .offset = offset, .max_bytes = max_bytes};
+        return FetchRequest{.correlation_id = headers.correlation_id,
+                            .offset = offset,
+                            .max_bytes = max_bytes};
     }
 }
 
@@ -74,6 +82,9 @@ std::vector<uint8_t> TcpHeaders::to_bytes() {
     std::vector<uint8_t> bytes(TCP_REQUEST_HEADER_LEN);
     std::memcpy(bytes.data(), correlation_id.begin(), correlation_id.size());
     pos += correlation_id.size();
+    std::memcpy(bytes.data() + pos, &protocol_version,
+                sizeof(protocol_version));
+    pos += sizeof(protocol_version);
     uint8_t type_byte = 0;
     switch (type) {
     case RequestType::Append:
@@ -84,7 +95,7 @@ std::vector<uint8_t> TcpHeaders::to_bytes() {
         break;
     }
     std::memcpy(bytes.data() + pos, &type_byte, sizeof(type_byte));
-    pos += 1;
+    pos += sizeof(type_byte);
 
     if (byteswap::is_big_endian()) {
         std::memcpy(bytes.data() + pos, &flags, sizeof(flags));
@@ -178,7 +189,7 @@ TcpResponse TcpResponse::makeResponse(const boost::uuids::uuid &correlation_id,
         response.payload.emplace(result.result_buf);
     }
     return response;
-                                    }
+}
 
 } // namespace broker
 } // namespace kafka_lite

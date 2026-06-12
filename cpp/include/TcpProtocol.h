@@ -11,6 +11,8 @@
 namespace kafka_lite {
 namespace broker {
 
+using boost::uuids::uuid;
+
 static uint32_t TCP_RESPONSE_HEADER_LEN = 17;
 static uint32_t TCP_REQUEST_HEADER_LEN = 20; // Without optional headers
 static uint8_t PROTOCOL_VERSION = 0;
@@ -42,13 +44,20 @@ struct FetchRequest {
 };
 
 struct TcpHeaders {
-    boost::uuids::uuid correlation_id;
+    TcpHeaders() = default;
+    TcpHeaders(const uuid &correlation_id, uint8_t ptcl_version,
+               RequestType type, uint16_t flags);
+    uuid correlation_id;
     uint8_t protocol_version;
     RequestType type;
     uint16_t flags;
-    ParseError parse_error;
     bool from_bytes(const std::vector<uint8_t> &bytes);
     std::vector<uint8_t> to_bytes();
+
+    ParseError getParseError() { return parse_error; }
+
+  private:
+    ParseError parse_error;
 };
 
 struct TcpRequest {
@@ -66,14 +75,12 @@ struct TcpResponse {
     static TcpResponse
     createErrorResponse(const boost::uuids::uuid &correlation_id,
                         ParseError error);
-    static TcpResponse
-    makeResponse(const boost::uuids::uuid &correlation_id, uint64_t offset,
-                 const std::error_code &ec);
-    static TcpResponse makeResponse(
-        const boost::uuids::uuid &correlation_id, const FetchResult &result,
-        const std::error_code &ec);
+    static TcpResponse makeResponse(const boost::uuids::uuid &correlation_id,
+                                    uint64_t offset, const std::error_code &ec);
+    static TcpResponse makeResponse(const boost::uuids::uuid &correlation_id,
+                                    const FetchResult &result,
+                                    const std::error_code &ec);
 };
-
 
 } // namespace broker
 } // namespace kafka_lite
