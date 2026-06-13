@@ -122,8 +122,6 @@ void TcpConnection::doReadPayload(uint32_t length) {
 
 void TcpConnection::handleTcpRequest(std::vector<uint8_t> header_bytes,
                                      std::vector<uint8_t> payload_bytes) {
-    // here there should be some validation of the request and an error sent
-    // back if invalid
     TcpHeaders headers;
     if (!headers.from_bytes(header_bytes)) {
         auto response = TcpResponse::createErrorResponse(headers.correlation_id,
@@ -151,6 +149,7 @@ void TcpConnection::handleAppendRequest(const AppendRequest &request) {
 }
 
 void TcpConnection::handleFetchRequest(const FetchRequest &request) {
+    // TODO: handle max_bytes too large
     FetchData data{.offset = request.offset, .max_bytes = request.max_bytes};
     core_->submit_fetch(
         data, [self = shared_from_this(), cor_id = request.correlation_id](const FetchResult &result,

@@ -58,25 +58,6 @@ bool TcpHeaders::from_bytes(const std::vector<uint8_t> &bytes) {
     return true;
 }
 
-std::variant<AppendRequest, FetchRequest> TcpRequest::to_specialized_type() {
-    switch (headers.type) {
-    case RequestType::Append:
-        return AppendRequest{.correlation_id = headers.correlation_id,
-                             .payload = payload};
-    case RequestType::Fetch:
-        uint64_t offset;
-        std::memcpy(&offset, payload.data(), sizeof(offset));
-        if (!byteswap::is_big_endian())
-            offset = byteswap::byteswap64(offset);
-        uint32_t max_bytes;
-        std::memcpy(&offset, payload.data() + sizeof(offset),
-                    sizeof(max_bytes));
-        return FetchRequest{.correlation_id = headers.correlation_id,
-                            .offset = offset,
-                            .max_bytes = max_bytes};
-    }
-}
-
 std::vector<uint8_t> TcpHeaders::to_bytes() {
     size_t pos = 0;
     std::vector<uint8_t> bytes(TCP_REQUEST_HEADER_LEN);
@@ -102,10 +83,42 @@ std::vector<uint8_t> TcpHeaders::to_bytes() {
     } else {
         std::array<uint8_t, 2> flag_bytes;
         std::memcpy(flag_bytes.data(), &flags, sizeof(flags));
-        bytes[pos - 1] = flag_bytes[1];
-        bytes[pos] = flag_bytes[0];
+        bytes[pos] = flag_bytes[1];
+        bytes[pos + 1] = flag_bytes[0];
     }
     return bytes;
+}
+
+std::variant<AppendRequest, FetchRequest> TcpRequest::to_specialized_type() {
+    switch (headers.type) {
+    case RequestType::Append:
+        return AppendRequest{.correlation_id = headers.correlation_id,
+                             .payload = payload};
+    case RequestType::Fetch:
+        FetchRequest request{.correlation_id = headers.correlation_id,
+                     .offset = 0,
+                     .max_bytes = 0};
+        std::memcpy(&request.offset, payload.data(), sizeof(request.offset));
+        std::memcpy(&request.max_bytes, payload.data() + sizeof(request.offset),
+                    sizeof(request.max_bytes));
+        if (byteswap::is_big_endian()) {
+            request.offset = byteswap::byteswap64(request.offset);
+            request.max_bytes = byteswap32(request.max_bytes);
+        }
+        return request;
+    }
+}
+
+std::vector<uint8_t> TcpRequest::make_payload(uint64_t offset,
+                                              uint32_t max_bytes) {
+    std::vector<uint8_t> payload(sizeof(offset) + sizeof(max_bytes));
+    if (byteswap::is_big_endian()) {
+        offset = byteswap64(offset);
+        max_bytes = byteswap32(max_bytes);
+    }
+    std::memcpy(payload.data(), &offset, sizeof(offset));
+    std::memcpy(payload.data() + sizeof(offset), &max_bytes, sizeof(max_bytes));
+    return payload;
 }
 
 std::vector<uint8_t> TcpResponse::to_bytes() {

@@ -40,7 +40,7 @@ struct AppendRequest {
 struct FetchRequest {
     boost::uuids::uuid correlation_id;
     uint64_t offset;
-    size_t max_bytes;
+    uint32_t max_bytes;
 };
 
 struct TcpHeaders {
@@ -64,14 +64,17 @@ struct TcpRequest {
     TcpHeaders headers;
     std::vector<uint8_t> payload;
     std::variant<AppendRequest, FetchRequest> to_specialized_type();
+
+    static std::vector<uint8_t> make_payload(uint64_t offset,
+                                             uint32_t max_bytes);
 };
 
 struct TcpResponse {
     boost::uuids::uuid correlation_id;
     uint8_t response_code;
     std::optional<std::vector<uint8_t>> payload;
-    std::vector<uint8_t> to_bytes();
 
+    std::vector<uint8_t> to_bytes();
     static TcpResponse
     createErrorResponse(const boost::uuids::uuid &correlation_id,
                         ParseError error);
