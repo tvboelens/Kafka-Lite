@@ -60,7 +60,7 @@ bool TcpHeaders::from_bytes(const std::vector<uint8_t> &bytes) {
     return true;
 }
 
-std::vector<uint8_t> TcpHeaders::to_bytes() {
+std::vector<uint8_t> TcpHeaders::to_bytes() const {
     size_t pos = 0;
     std::vector<uint8_t> bytes(TCP_REQUEST_HEADER_LEN);
     std::memcpy(bytes.data(), correlation_id.begin(), correlation_id.size());
@@ -98,8 +98,8 @@ std::variant<AppendRequest, FetchRequest> TcpRequest::to_specialized_type() {
                              .payload = payload};
     case RequestType::Fetch:
         FetchRequest request{.correlation_id = headers.correlation_id,
-                     .offset = 0,
-                     .max_bytes = 0};
+                             .offset = 0,
+                             .max_bytes = 0};
         std::memcpy(&request.offset, payload.data(), sizeof(request.offset));
         std::memcpy(&request.max_bytes, payload.data() + sizeof(request.offset),
                     sizeof(request.max_bytes));
@@ -123,7 +123,7 @@ std::vector<uint8_t> TcpRequest::make_payload(uint64_t offset,
     return payload;
 }
 
-std::vector<uint8_t> TcpResponse::to_bytes() {
+std::vector<uint8_t> TcpResponse::to_bytes() const {
     uint32_t len = TCP_RESPONSE_HEADER_LEN;
     if (payload.has_value())
         len += payload.value().size();
@@ -138,7 +138,8 @@ std::vector<uint8_t> TcpResponse::to_bytes() {
     std::memcpy(bytes.data() + pos, &response_code, sizeof(response_code));
     if (payload.has_value()) {
         pos += sizeof(response_code);
-        std::memcpy(bytes.data() + pos, payload.value().data(), payload.value().size());
+        std::memcpy(bytes.data() + pos, payload.value().data(),
+                    payload.value().size());
     }
     return bytes;
 }
@@ -152,7 +153,7 @@ TcpResponse TcpResponse::from_bytes(const std::vector<uint8_t> &bytes) {
     if (len != bytes.size() - sizeof(len)) {
         std::string msg = "Encoded len is " + std::to_string(len) +
                           ", but size of bytes is " +
-                          std::to_string(bytes.size()) + ".";
+                          std::to_string(bytes.size() - sizeof(len)) + ".";
         throw std::logic_error(msg);
     }
     size_t pos = sizeof(len);
@@ -164,13 +165,14 @@ TcpResponse TcpResponse::from_bytes(const std::vector<uint8_t> &bytes) {
     pos += sizeof(response.response_code);
     if (len > TCP_RESPONSE_HEADER_LEN) {
         response.payload.emplace(len - TCP_RESPONSE_HEADER_LEN);
-        std::memcpy(response.payload->data(), bytes.data() + pos, response.payload->size());
+        std::memcpy(response.payload->data(), bytes.data() + pos,
+                    response.payload->size());
     }
     return response;
 }
 
 TcpResponse
-TcpResponse::createErrorResponse(const boost::uuids::uuid &correlation_id,
+TcpResponse::makeErrorResponse(const boost::uuids::uuid &correlation_id,
                                  ParseError error) {
     TcpResponse response;
     response.correlation_id = correlation_id;
@@ -201,10 +203,12 @@ TcpResponse TcpResponse::makeResponse(const boost::uuids::uuid &correlation_id,
     if (ec) {
         if (ec.value() ==
             std::make_error_code(std::errc::not_connected).value())
-            response.response_code = 0x40;
+            response.response_code = 0x80;
         else if (ec.value() ==
                  std::make_error_code(std::errc::io_error).value())
-            response.response_code = 0x41;
+            response.response_code = 0x81;
+        else
+            response.response_code = 0xFF;
         response.payload.reset();
     } else {
         response.response_code = 0;
@@ -212,7 +216,6 @@ TcpResponse TcpResponse::makeResponse(const boost::uuids::uuid &correlation_id,
         if (!is_big_endian())
             offset = byteswap64(offset);
         std::memcpy(response.payload->data(), &offset, sizeof(offset));
-        
     }
     return response;
 }
@@ -225,12 +228,12 @@ TcpResponse TcpResponse::makeResponse(const boost::uuids::uuid &correlation_id,
     if (ec) {
         if (ec.value() ==
             std::make_error_code(std::errc::not_connected).value())
-            response.response_code = 0x40;
+            response.response_code = 0x80;
         else if (ec.value() ==
                  std::make_error_code(std::errc::io_error).value())
-            response.response_code = 0x41;
+            response.response_code = 0x81;
         else
-            response.response_code = 0x4F;
+            response.response_code = 0xFF;
         response.payload.reset();
     } else {
         response.response_code = 0;

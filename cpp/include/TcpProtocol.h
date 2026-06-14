@@ -52,7 +52,7 @@ struct TcpHeaders {
     RequestType type;
     uint16_t flags;
     bool from_bytes(const std::vector<uint8_t> &bytes);
-    std::vector<uint8_t> to_bytes();
+    std::vector<uint8_t> to_bytes() const;
 
     ParseError getParseError() { return parse_error; }
 
@@ -74,10 +74,10 @@ struct TcpResponse {
     uint8_t response_code;
     std::optional<std::vector<uint8_t>> payload;
 
-    std::vector<uint8_t> to_bytes();
+    std::vector<uint8_t> to_bytes() const;
     static TcpResponse from_bytes(const std::vector<uint8_t> &bytes);
     static TcpResponse
-    createErrorResponse(const boost::uuids::uuid &correlation_id,
+    makeErrorResponse(const boost::uuids::uuid &correlation_id,
                         ParseError error);
     static TcpResponse makeResponse(const boost::uuids::uuid &correlation_id,
                                     uint64_t offset, const std::error_code &ec);

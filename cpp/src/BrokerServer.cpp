@@ -124,7 +124,7 @@ void TcpConnection::handleTcpRequest(std::vector<uint8_t> header_bytes,
                                      std::vector<uint8_t> payload_bytes) {
     TcpHeaders headers;
     if (!headers.from_bytes(header_bytes)) {
-        auto response = TcpResponse::createErrorResponse(headers.correlation_id,
+        auto response = TcpResponse::makeErrorResponse(headers.correlation_id,
                                                          headers.getParseError());
         sendResponse(response);
         return;
