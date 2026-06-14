@@ -4,7 +4,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <iostream>
 #include <stdexcept>
+#include <string>
 #include <system_error>
 #include <utility>
 #include <vector>
@@ -122,18 +124,49 @@ std::vector<uint8_t> TcpRequest::make_payload(uint64_t offset,
 }
 
 std::vector<uint8_t> TcpResponse::to_bytes() {
-    uint32_t len = TCP_RESPONSE_HEADER_LEN, pos = 0;
+    uint32_t len = TCP_RESPONSE_HEADER_LEN;
     if (payload.has_value())
         len += payload.value().size();
+    std::vector<uint8_t> bytes(len + sizeof(len));
     if (!byteswap::is_big_endian())
         len = byteswap::byteswap32(len);
-    std::vector<uint8_t> bytes(len + sizeof(len));
     std::memcpy(bytes.data(), &len, sizeof(len));
-    std::memcpy(bytes.data() + sizeof(len), correlation_id.begin(),
+    size_t pos = sizeof(len);
+    std::memcpy(bytes.data() + pos, correlation_id.begin(),
                 correlation_id.size());
-    std::memcpy(bytes.data() + sizeof(len) + correlation_id.size(),
-                &response_code, sizeof(response_code));
+    pos += correlation_id.size();
+    std::memcpy(bytes.data() + pos, &response_code, sizeof(response_code));
+    if (payload.has_value()) {
+        pos += sizeof(response_code);
+        std::memcpy(bytes.data() + pos, payload.value().data(), payload.value().size());
+    }
     return bytes;
+}
+
+TcpResponse TcpResponse::from_bytes(const std::vector<uint8_t> &bytes) {
+    TcpResponse response;
+    uint32_t len = 0;
+    std::memcpy(&len, bytes.data(), sizeof(len));
+    if (!byteswap::is_big_endian())
+        len = byteswap32(len);
+    if (len != bytes.size() - sizeof(len)) {
+        std::string msg = "Encoded len is " + std::to_string(len) +
+                          ", but size of bytes is " +
+                          std::to_string(bytes.size()) + ".";
+        throw std::logic_error(msg);
+    }
+    size_t pos = sizeof(len);
+    std::memcpy(response.correlation_id.begin(), bytes.data() + pos,
+                response.correlation_id.size());
+    pos += response.correlation_id.size();
+    std::memcpy(&response.response_code, bytes.data() + pos,
+                sizeof(response.response_code));
+    pos += sizeof(response.response_code);
+    if (len > TCP_RESPONSE_HEADER_LEN) {
+        response.payload.emplace(len - TCP_RESPONSE_HEADER_LEN);
+        std::memcpy(response.payload->data(), bytes.data() + pos, response.payload->size());
+    }
+    return response;
 }
 
 TcpResponse
@@ -175,11 +208,11 @@ TcpResponse TcpResponse::makeResponse(const boost::uuids::uuid &correlation_id,
         response.payload.reset();
     } else {
         response.response_code = 0;
-        std::vector<uint8_t> payload(sizeof(offset));
+        response.payload.emplace(sizeof(offset));
         if (!is_big_endian())
             offset = byteswap64(offset);
-        std::memcpy(payload.data(), &offset, sizeof(offset));
-        response.payload.emplace(std::move(payload));
+        std::memcpy(response.payload->data(), &offset, sizeof(offset));
+        
     }
     return response;
 }
@@ -196,6 +229,8 @@ TcpResponse TcpResponse::makeResponse(const boost::uuids::uuid &correlation_id,
         else if (ec.value() ==
                  std::make_error_code(std::errc::io_error).value())
             response.response_code = 0x41;
+        else
+            response.response_code = 0x4F;
         response.payload.reset();
     } else {
         response.response_code = 0;

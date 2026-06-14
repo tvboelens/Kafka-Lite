@@ -75,6 +75,7 @@ struct TcpResponse {
     std::optional<std::vector<uint8_t>> payload;
 
     std::vector<uint8_t> to_bytes();
+    static TcpResponse from_bytes(const std::vector<uint8_t> &bytes);
     static TcpResponse
     createErrorResponse(const boost::uuids::uuid &correlation_id,
                         ParseError error);
