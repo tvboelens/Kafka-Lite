@@ -4,11 +4,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <system_error>
-#include <utility>
 #include <vector>
 
 namespace kafka_lite {
