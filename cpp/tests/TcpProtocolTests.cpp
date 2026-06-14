@@ -290,5 +290,58 @@ TEST(TcpProtocolTests, tcp_response_from_parse_error) {
     }
 }
 
+struct TcpRequestFromFetchResultEcTest {
+    boost::uuids::uuid correlation_id;
+    FetchResult fetch_result;
+    std::error_code ec;
+    uint8_t expected_rc;
+};
+
+TEST(TcpProtocolTests, tcp_response_from_fetch_result_ec) {
+    std::vector<TcpRequestFromFetchResultEcTest> tests = {
+        {
+            {{0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00,
+              0xc0, 0x4f, 0xd4, 0x30, 0xc8}},
+            {{1, 2, 3, 4}, {}},
+            {},
+            0,
+        },
+        {
+            {{0x66, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00,
+              0xc0, 0x4f, 0xd4, 0x30, 0xc8}},
+            {{1, 2, 3, 4}, {}},
+            std::make_error_code(std::errc::not_connected),
+            0x80,
+        },
+        {
+            {{0x66, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00,
+              0xc0, 0x4f, 0xd4, 0x30, 0xc8}},
+            {{5, 7, 9, 11}, {}},
+            std::make_error_code(std::errc::io_error),
+            0x81,
+        },
+        {
+            {{0x66, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00,
+              0xc0, 0x4f, 0xd4, 0x30, 0xf8}},
+            {{2, 4, 6, 8}, {}},
+            std::make_error_code(std::errc::executable_format_error),
+            0xff,
+        }};
+    for (const auto &test : tests) {
+        auto response = TcpResponse::makeResponse(test.correlation_id,
+                                                  test.fetch_result, test.ec);
+        EXPECT_EQ(response.correlation_id, test.correlation_id);
+        EXPECT_EQ(response.response_code, test.expected_rc);
+        bool has_ec = test.ec ? true : false;
+        ASSERT_NE(response.payload.has_value(), has_ec);
+        if (!test.ec) {
+            ASSERT_TRUE(response.payload.has_value());
+            EXPECT_EQ(response.payload, test.fetch_result.result_buf);
+        } else {
+            EXPECT_FALSE(response.payload.has_value());
+        }
+    }
+}
+
 } // namespace broker
 } // namespace kafka_lite
