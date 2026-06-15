@@ -31,7 +31,7 @@ class BrokerCore : public BrokerCoreIfc {
     BrokerCoreStatus status_;
     std::thread writer_thread;
     std::atomic_bool stop_;
-    std::atomic_int16_t fetch_calls_counter_;
+    volatile std::atomic_int16_t fetch_calls_counter_;
 };
 } // namespace broker
 } // namespace kafka_lite

@@ -1,7 +1,7 @@
 #ifndef BROKER_SERVER_HH
 #define BROKER_SERVER_HH
 
-#include "BrokerCore.h"
+#include "BrokerCoreIfc.h"
 #include "TcpProtocol.h"
 #include <array>
 #include <boost/asio/io_context.hpp>
@@ -63,7 +63,7 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection> {
 
 class BrokerServer : public std::enable_shared_from_this<BrokerServer> {
   public:
-    BrokerServer(std::unique_ptr<BrokerCoreIfc> &core,
+    BrokerServer(std::unique_ptr<BrokerCoreIfc> core,
                  boost::asio::io_context &io_context);
   private:
     void startAccept();

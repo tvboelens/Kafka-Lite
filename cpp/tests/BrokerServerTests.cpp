@@ -1,38 +1,35 @@
 #include "../include/BrokerServer.h"
-#include <cstdint>
+#include "../include/FakeBrokerCore.h"
 #include <gtest/gtest.h>
-#include <variant>
-#include <vector>
+#include <memory>
+#include <thread>
 
 namespace kafka_lite {
 namespace broker {
 
-class BrokerServerTests : public ::testing::Test {
-  private:
-    std::filesystem::path dir_;
-
+class TestServer {
   public:
-    std::filesystem::path getDir() { return dir_; }
+    TestServer(): server_(std::make_unique<FakeBrokerCore>(), io_context_) {}
+    void start() {
+        io_context_thread = std::thread([this](){io_context_.run();});
+    };
+    void stop() {io_context_.stop();}
 
-  protected:
-    void SetUp() override { dir_ = std::filesystem::current_path() / "Server"; }
-    void TearDown() override { std::filesystem::remove_all(dir_); }
+  private:
+    boost::asio::io_context io_context_;
+    BrokerServer server_;
+    std::thread io_context_thread;
+
 };
 
-/*
-1. succesful append request
-2. succesful fetch request
-3. Checksum mismatch
-4. Type header leads to right kind of request
-5. Endianness?
-6. payload is parsed correctly -> function to serialize a TCP request?
-*/
+class BrokerServerTests : public ::testing::Test {
+  private:
 
-/* TEST(BrokerServerTests, parseAppendRequest) {
-    std::vector<uint8_t> bytes;
-    auto request = TcpConnection::parseTcpRequest(bytes);
-    EXPECT_TRUE(std::holds_alternative<AppendRequest>(request));
-} */
+  protected:
+    void SetUp() override { server_.start();}
+    void TearDown() override { server_.stop(); }
+    TestServer server_;
+};
 
 } // namespace broker
 } // namespace kafka_lite
