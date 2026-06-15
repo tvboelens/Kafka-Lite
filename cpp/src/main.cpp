@@ -4,7 +4,7 @@
 #include <memory>
 
 int main() {
-    auto dir = std::filesystem::current_path()/"Broker";
+    auto dir = std::filesystem::current_path()/"BrokerDir";
     auto core = std::make_unique<kafka_lite::broker::BrokerCore>(dir, 1024);
     boost::asio::io_context io_context;
     kafka_lite::broker::BrokerServer server(core, io_context);

@@ -65,7 +65,6 @@ class BrokerServer : public std::enable_shared_from_this<BrokerServer> {
   public:
     BrokerServer(std::unique_ptr<BrokerCore> &core,
                  boost::asio::io_context &io_context);
-    // TODO: port number for TCP, 13 is for daytime server
   private:
     void startAccept();
     void handleAccept(std::shared_ptr<TcpConnection> connection,
