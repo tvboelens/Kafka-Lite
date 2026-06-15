@@ -34,12 +34,12 @@ TcpConnection::parseTcpRequest(const TcpHeaders &headers,
 
 std::shared_ptr<TcpConnection>
 TcpConnection::create(boost::asio::io_context &io_context,
-                      std::unique_ptr<BrokerCore> &core) {
+                      std::unique_ptr<BrokerCoreIfc> &core) {
     return std::shared_ptr<TcpConnection>(new TcpConnection(io_context, core));
 }
 
 TcpConnection::TcpConnection(boost::asio::io_context &io_context,
-                             std::unique_ptr<BrokerCore> &core)
+                             std::unique_ptr<BrokerCoreIfc> &core)
     : strand_(boost::asio::make_strand(io_context)), socket_(io_context),
       core_(core) {}
 
@@ -202,7 +202,7 @@ void TcpConnection::stop() {
     rc = socket_.close(ec);
 }
 
-BrokerServer::BrokerServer(std::unique_ptr<BrokerCore> &core,
+BrokerServer::BrokerServer(std::unique_ptr<BrokerCoreIfc> &core,
                            boost::asio::io_context &io_context)
     : status_(BrokerServerStatus::Starting), core_(std::move(core)),
       iocontext_(io_context),

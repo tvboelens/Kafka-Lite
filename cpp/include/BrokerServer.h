@@ -28,14 +28,14 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection> {
 
     static std::shared_ptr<TcpConnection>
     create(boost::asio::io_context &io_context,
-           std::unique_ptr<BrokerCore> &core);
+           std::unique_ptr<BrokerCoreIfc> &core);
     static std::variant<AppendRequest, FetchRequest>
     parseTcpRequest(const TcpHeaders &headers,
                     const std::vector<uint8_t> &payload_bytes);
 
   private:
     TcpConnection(boost::asio::io_context &io_context,
-                  std::unique_ptr<BrokerCore> &core);
+                  std::unique_ptr<BrokerCoreIfc> &core);
     void stop();
     void doReadHeaderLength();
     void doReadMagicBytes();
@@ -57,19 +57,19 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection> {
     std::array<uint8_t, 5> magic_bytes_buf_;
     std::vector<uint8_t> header_read_buf_;
     std::vector<uint8_t> payload_read_buf_;
-    std::unique_ptr<BrokerCore> &core_;
+    std::unique_ptr<BrokerCoreIfc> &core_;
     bool write_in_progress_, stopped_;
 };
 
 class BrokerServer : public std::enable_shared_from_this<BrokerServer> {
   public:
-    BrokerServer(std::unique_ptr<BrokerCore> &core,
+    BrokerServer(std::unique_ptr<BrokerCoreIfc> &core,
                  boost::asio::io_context &io_context);
   private:
     void startAccept();
     void handleAccept(std::shared_ptr<TcpConnection> connection,
                       const boost::system::error_code &ec);
-    std::unique_ptr<BrokerCore> core_;
+    std::unique_ptr<BrokerCoreIfc> core_;
     boost::asio::io_context &iocontext_;
     tcp::acceptor tcp_acceptor_;
     BrokerServerStatus status_;
