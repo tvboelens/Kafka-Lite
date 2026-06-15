@@ -44,7 +44,8 @@ void FakeBrokerCore::submit_fetch(const FetchData &data,
         } else {
             auto old_size = result.result_buf.size();
             result.result_buf.resize(old_size + records_[i].size());
-            std::memcpy(result.result_buf.data() + old_size, records_[i].data(), records_[i].size());
+            std::memcpy(result.result_buf.data() + old_size, records_[i].data(),
+                        records_[i].size());
         }
     }
     callback(result, ec);

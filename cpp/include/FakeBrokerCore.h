@@ -13,9 +13,8 @@ class FakeBrokerCore : public BrokerCoreIfc {
   public:
     FakeBrokerCore();
     void submit_append(const AppendData &data,
-                               AppendCallback callback) override;
-    void submit_fetch(const FetchData &data,
-                              FetchCallback callback) override;
+                       AppendCallback callback) override;
+    void submit_fetch(const FetchData &data, FetchCallback callback) override;
     void start() override;
     void stop() override;
 
@@ -25,8 +24,7 @@ class FakeBrokerCore : public BrokerCoreIfc {
     bool stop_;
 };
 
-}
-
-}
+} // namespace broker
+} // namespace kafka_lite
 
 #endif
