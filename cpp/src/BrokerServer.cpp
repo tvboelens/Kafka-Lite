@@ -202,11 +202,11 @@ void TcpConnection::stop() {
     rc = socket_.close(ec);
 }
 
-BrokerServer::BrokerServer(std::unique_ptr<BrokerCoreIfc> core,
+BrokerServer::BrokerServer(unsigned int port, std::unique_ptr<BrokerCoreIfc> core,
                            boost::asio::io_context &io_context)
-    : status_(BrokerServerStatus::Starting), core_(std::move(core)),
+    : port_(port), status_(BrokerServerStatus::Starting), core_(std::move(core)),
       iocontext_(io_context),
-      tcp_acceptor_(iocontext_, tcp::endpoint(tcp::v4(), 49153)) {
+      tcp_acceptor_(iocontext_, tcp::endpoint(tcp::v4(), port_)) {
     core_->start();
     status_ = BrokerServerStatus::Active;
     startAccept();

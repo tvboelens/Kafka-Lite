@@ -63,12 +63,14 @@ class TcpConnection : public std::enable_shared_from_this<TcpConnection> {
 
 class BrokerServer : public std::enable_shared_from_this<BrokerServer> {
   public:
-    BrokerServer(std::unique_ptr<BrokerCoreIfc> core,
+    BrokerServer(unsigned int port, std::unique_ptr<BrokerCoreIfc> core,
                  boost::asio::io_context &io_context);
+    unsigned int port() { return port_; }
   private:
     void startAccept();
     void handleAccept(std::shared_ptr<TcpConnection> connection,
                       const boost::system::error_code &ec);
+    unsigned int port_;
     std::unique_ptr<BrokerCoreIfc> core_;
     boost::asio::io_context &iocontext_;
     tcp::acceptor tcp_acceptor_;

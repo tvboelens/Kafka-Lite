@@ -31,6 +31,9 @@ set(TEST_SOURCES
     tests/BrokerServerTests.cpp
     tests/StorageEngineTests.cpp
     tests/TcpProtocolTests.cpp
+    src/BrokerClient.cpp
+    src/FakeBrokerCore.cpp
+    src/RecordProducer.cpp
 )
 
 

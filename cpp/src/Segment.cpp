@@ -192,10 +192,6 @@ uint64_t Segment::append(const uint8_t *data, uint32_t len) {
 
     if (!write_u32_le(log_fd_, len))
         throw std::ios_base::failure("Failed to write length to log file.");
-    /*
-        Future feature: Create and write checksum -> use crc32, there should be
-       libraries that do this (boost::crc?)
-    */
 
     uint64_t curr_write, bytes_written = 0;
     while (bytes_written < len) {
