@@ -2,6 +2,7 @@
 #define TCP_REQUEST_HH
 
 #include "../include/Segment.h"
+#include <array>
 #include <boost/uuid.hpp>
 #include <cstdint>
 #include <optional>
@@ -16,6 +17,7 @@ using boost::uuids::uuid;
 static uint32_t TCP_RESPONSE_HEADER_LEN = 17;
 static uint32_t TCP_REQUEST_HEADER_LEN = 20; // Without optional headers
 static uint8_t PROTOCOL_VERSION = 0;
+static std::array<uint8_t, 5> MAGIC_BYTES = {0x6B, 0x61, 0x66, 0x6B, 0x61};
 
 enum class RequestType {
     Append,

@@ -67,8 +67,7 @@ void TcpConnection::doReadMagicBytes() {
         [self = shared_from_this()](boost::system::error_code ec,
                                     size_t bytes_read) {
             if (ec ||
-                self->magic_bytes_buf_ !=
-                    std::array<uint8_t, 5>({0x6B, 0x61, 0x66, 0x6B, 0x61})) {
+                self->magic_bytes_buf_ != MAGIC_BYTES) {
                 self->stop();
                 return;
             }

@@ -1,9 +1,11 @@
 #include "../include/BrokerClient.h"
 #include "../include/BrokerServer.h"
 #include "../include/FakeBrokerCore.h"
+#include <cstdint>
 #include <gtest/gtest.h>
 #include <memory>
 #include <thread>
+#include <vector>
 
 namespace kafka_lite {
 namespace broker {
@@ -32,7 +34,12 @@ class BrokerServerTests : public ::testing::Test {
     TestServer server_;
 };
 
-TEST_F(BrokerServerTests, append_ok) { BrokerClient client(server_.port()); }
+TEST_F(BrokerServerTests, append_ok) {
+    BrokerClient client(server_.port());
+    std::vector<uint8_t> payload{1,2,3,4};
+    auto response = client.append(payload);
+    ASSERT_EQ(response.response_code, 0);
+}
 
 // server should reject if checksum is wrong
 TEST_F(BrokerServerTests, append_wrong_checksum) { BrokerClient client(server_.port()); }
