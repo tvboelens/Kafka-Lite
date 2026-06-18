@@ -171,7 +171,7 @@ TcpResponse TcpResponse::from_bytes(const std::vector<uint8_t> &bytes) {
 
 TcpResponse
 TcpResponse::makeErrorResponse(const boost::uuids::uuid &correlation_id,
-                                 ParseError error) {
+                               ParseError error) {
     TcpResponse response;
     response.correlation_id = correlation_id;
     switch (error) {

@@ -197,7 +197,7 @@ TEST_F(StorageEngineTests, LogReadWriteNonActive) {
     std::filesystem::path dir = getDir() / "LogReadNonActive";
     Log log(dir, 4 * (SEGMENT_HEADER_SIZE + 1));
     EXPECT_ANY_THROW(log.append({}));
-    EXPECT_ANY_THROW(log.fetch({ 0, 32}));
+    EXPECT_ANY_THROW(log.fetch({0, 32}));
 }
 
 using crc32c_type =
@@ -295,7 +295,7 @@ TEST_F(StorageEngineTests, LogRecoveryEmptySegment) {
     FetchData req{0, 50};
     auto result = log.fetch(req);
     ASSERT_EQ(result.result_buf.size(), SEGMENT_HEADER_SIZE + 1);
-    ASSERT_EQ(result.result_buf[result.result_buf.size()-1], 5);
+    ASSERT_EQ(result.result_buf[result.result_buf.size() - 1], 5);
 }
 
 TEST_F(StorageEngineTests, LogTruncateMidRecord) {
@@ -635,7 +635,7 @@ TEST_F(StorageEngineTests, LogRolloverTruncateActiveSegment) {
     auto filename = std::to_string(base_offsets[1]) + ".log";
     std::string filler(68 - filename.size(), '0');
     filename = filler + filename;
-    auto log_file = dir/filename;
+    auto log_file = dir / filename;
     std::filesystem::resize_file(log_file,
                                  std::filesystem::file_size(log_file) - 5);
     Log log(dir, 1024);

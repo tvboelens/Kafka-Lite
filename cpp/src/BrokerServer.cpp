@@ -66,8 +66,7 @@ void TcpConnection::doReadMagicBytes() {
         socket_, boost::asio::buffer(magic_bytes_buf_),
         [self = shared_from_this()](boost::system::error_code ec,
                                     size_t bytes_read) {
-            if (ec ||
-                self->magic_bytes_buf_ != MAGIC_BYTES) {
+            if (ec || self->magic_bytes_buf_ != MAGIC_BYTES) {
                 self->stop();
                 return;
             }
@@ -124,7 +123,7 @@ void TcpConnection::handleTcpRequest(std::vector<uint8_t> header_bytes,
     TcpHeaders headers;
     if (!headers.from_bytes(header_bytes)) {
         auto response = TcpResponse::makeErrorResponse(headers.correlation_id,
-                                                         headers.getParseError());
+                                                       headers.getParseError());
         sendResponse(response);
         return;
     }
@@ -139,9 +138,11 @@ void TcpConnection::handleTcpRequest(std::vector<uint8_t> header_bytes,
 void TcpConnection::handleAppendRequest(const AppendRequest &request) {
     AppendData data{request.payload};
     core_->submit_append(
-        data, [self = shared_from_this(), cor_id = request.correlation_id](uint64_t offset, std::error_code ec) {
+        data, [self = shared_from_this(), cor_id = request.correlation_id](
+                  uint64_t offset, std::error_code ec) {
             boost::asio::post(self->strand_, [self, cor_id, offset, ec]() {
-                TcpResponse response = TcpResponse::makeResponse(cor_id, offset, ec);
+                TcpResponse response =
+                    TcpResponse::makeResponse(cor_id, offset, ec);
                 self->sendResponse(response);
             });
         });
@@ -151,10 +152,11 @@ void TcpConnection::handleFetchRequest(const FetchRequest &request) {
     // TODO: handle max_bytes too large
     FetchData data{.offset = request.offset, .max_bytes = request.max_bytes};
     core_->submit_fetch(
-        data, [self = shared_from_this(), cor_id = request.correlation_id](const FetchResult &result,
-                                             std::error_code ec) {
+        data, [self = shared_from_this(), cor_id = request.correlation_id](
+                  const FetchResult &result, std::error_code ec) {
             boost::asio::post(self->strand_, [self, cor_id, result, ec]() {
-                TcpResponse response = TcpResponse::makeResponse(cor_id, result, ec);
+                TcpResponse response =
+                    TcpResponse::makeResponse(cor_id, result, ec);
                 self->sendResponse(response);
             });
         });
@@ -201,10 +203,11 @@ void TcpConnection::stop() {
     rc = socket_.close(ec);
 }
 
-BrokerServer::BrokerServer(unsigned int port, std::unique_ptr<BrokerCoreIfc> core,
+BrokerServer::BrokerServer(unsigned int port,
+                           std::unique_ptr<BrokerCoreIfc> core,
                            boost::asio::io_context &io_context)
-    : port_(port), status_(BrokerServerStatus::Starting), core_(std::move(core)),
-      iocontext_(io_context),
+    : port_(port), status_(BrokerServerStatus::Starting),
+      core_(std::move(core)), iocontext_(io_context),
       tcp_acceptor_(iocontext_, tcp::endpoint(tcp::v4(), port_)) {
     core_->start();
     status_ = BrokerServerStatus::Active;

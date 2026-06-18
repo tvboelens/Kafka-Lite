@@ -15,9 +15,7 @@ BrokerCore::BrokerCore(const std::filesystem::path &dir, uint64_t segment_size)
       append_log_(dir, segment_size),
       writer_thread(&BrokerCore::writerLoop, this) {}
 
-BrokerCore::~BrokerCore() {
-    stop();
-}
+BrokerCore::~BrokerCore() { stop(); }
 
 void BrokerCore::start() {
     append_log_.start();
@@ -43,7 +41,8 @@ void BrokerCore::submit_append(const AppendData &data,
         return;
     } else if (status_ == BrokerCoreStatus::Starting ||
                status_ == BrokerCoreStatus::Recovering) {
-        while (status_ != BrokerCoreStatus::Active);// Block appends to avoid appends during recovery
+        while (status_ != BrokerCoreStatus::Active)
+            ; // Block appends to avoid appends during recovery
     }
     AppendJob job;
     job.payload = data.data;
@@ -51,8 +50,7 @@ void BrokerCore::submit_append(const AppendData &data,
     append_queue_.push(job);
 }
 
-void BrokerCore::submit_fetch(const FetchData &data,
-                              FetchCallback callback) {
+void BrokerCore::submit_fetch(const FetchData &data, FetchCallback callback) {
     auto counter = fetch_calls_counter_.fetch_add(1, std::memory_order_acq_rel);
     if (status_ == BrokerCoreStatus::Stopping ||
         status_ == BrokerCoreStatus::Stopped) {
@@ -63,7 +61,8 @@ void BrokerCore::submit_fetch(const FetchData &data,
     } else if (status_ == BrokerCoreStatus::Starting ||
                status_ == BrokerCoreStatus::Recovering) {
         while (status_ != BrokerCoreStatus::Active)
-            std::this_thread::sleep_for(300ms); // Block reads to avoid appends during recovery
+            std::this_thread::sleep_for(
+                300ms); // Block reads to avoid appends during recovery
     }
     std::error_code ec;
     FetchResult result;

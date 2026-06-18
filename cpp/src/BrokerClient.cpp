@@ -53,7 +53,7 @@ TcpResponse BrokerClient::fetch(uint64_t offset, uint32_t max_bytes) {
     return recv_response(socket);
 }
 
-    TcpResponse BrokerClient::send_raw_request(const TcpRequest &request) {
+TcpResponse BrokerClient::send_raw_request(const TcpRequest &request) {
     tcp::socket socket(io_context_);
     tcp::resolver resolver(io_context_);
     tcp::resolver::results_type endpoints =
@@ -106,8 +106,6 @@ TcpResponse BrokerClient::recv_response(tcp::socket &socket) {
                 recv_bytes.size());
     return TcpResponse::from_bytes(response_bytes);
 }
-
-
 
 } // namespace broker
 } // namespace kafka_lite

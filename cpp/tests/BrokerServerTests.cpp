@@ -21,7 +21,10 @@ class TestServer {
     void start() {
         io_context_thread = std::thread([this]() { io_context_.run(); });
     };
-    void stop() { io_context_.stop(); io_context_thread.join(); }
+    void stop() {
+        io_context_.stop();
+        io_context_thread.join();
+    }
     unsigned int port() { return server_.port(); }
 
   private:
@@ -40,7 +43,7 @@ class BrokerServerTests : public ::testing::Test {
 
 TEST_F(BrokerServerTests, append_ok) {
     BrokerClient client(server_.port());
-    std::vector<uint8_t> payload{1,2,3,4};
+    std::vector<uint8_t> payload{1, 2, 3, 4};
     auto response = client.append(payload);
     ASSERT_EQ(response.response_code, 0);
     ASSERT_TRUE(response.payload.has_value());
@@ -118,12 +121,15 @@ TEST_F(BrokerServerTests, append_fetch_one) {
     ASSERT_TRUE(fetch_response.payload.has_value());
     ASSERT_EQ(fetch_response.payload->size(), payload.size() + 4);
     std::vector<uint8_t> fetch_payload(payload.size());
-    fetch_payload.assign(fetch_response.payload->begin() + 4, fetch_response.payload->end());
+    fetch_payload.assign(fetch_response.payload->begin() + 4,
+                         fetch_response.payload->end());
     ASSERT_EQ(fetch_payload, payload);
 }
 
 // server should reject if checksum is wrong
-TEST_F(BrokerServerTests, append_wrong_checksum) { BrokerClient client(server_.port()); }
+TEST_F(BrokerServerTests, append_wrong_checksum) {
+    BrokerClient client(server_.port());
+}
 
 } // namespace broker
 } // namespace kafka_lite

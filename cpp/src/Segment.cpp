@@ -12,8 +12,6 @@
 #include <unistd.h>
 #include <vector>
 
-
-
 bool write_u32_le(int fd, uint32_t value) {
     if (kafka_lite::byteswap::is_big_endian())
         value = kafka_lite::byteswap::byteswap32(value);
@@ -458,9 +456,9 @@ RecoveryResult Segment::recover() {
 
     if (st.st_size == 0) {
         published_size_.store(0);
-        published_offset_.store(base_offset_-1);
+        published_offset_.store(base_offset_ - 1);
         return RecoveryResult::Truncated;
-	}
+    }
 
     uint32_t record_len = 0, curr_file_pos = 0;
     size_t curr_read, bytes_read = 0;
