@@ -39,13 +39,14 @@ void FakeBrokerCore::submit_fetch(const FetchData &data,
     std::error_code ec;
     size_t i = data.offset;
     while (i < records_.size()) {
-        if (result.result_buf.size() + records_[i].size()) {
+        if (result.result_buf.size() + records_[i].size() > data.max_bytes) {
             break;
         } else {
             auto old_size = result.result_buf.size();
             result.result_buf.resize(old_size + records_[i].size());
             std::memcpy(result.result_buf.data() + old_size, records_[i].data(),
                         records_[i].size());
+            ++i;
         }
     }
     callback(result, ec);
