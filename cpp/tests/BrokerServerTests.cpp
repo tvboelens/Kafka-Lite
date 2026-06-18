@@ -8,7 +8,6 @@
 #include <cstring>
 #include <gtest/gtest.h>
 #include <memory>
-#include <span>
 #include <thread>
 #include <vector>
 
@@ -117,9 +116,9 @@ TEST_F(BrokerServerTests, append_fetch_one) {
     auto fetch_response = client.fetch(offset, 1024);
     ASSERT_EQ(fetch_response.response_code, 0);
     ASSERT_TRUE(fetch_response.payload.has_value());
-    ASSERT_EQ(fetch_response.payload->size(), payload.size() + 16);
+    ASSERT_EQ(fetch_response.payload->size(), payload.size() + 4);
     std::vector<uint8_t> fetch_payload(payload.size());
-    fetch_payload.assign(fetch_response.payload->begin()+16, fetch_response.payload->end());
+    fetch_payload.assign(fetch_response.payload->begin() + 4, fetch_response.payload->end());
     ASSERT_EQ(fetch_payload, payload);
 }
 
