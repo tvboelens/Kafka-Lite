@@ -17,6 +17,7 @@ class BrokerClient {
     BrokerClient(unsigned int port);
     TcpResponse append(const std::vector<uint8_t> &payload);
     TcpResponse fetch(uint64_t offset, uint32_t max_bytes);
+    TcpResponse send_raw_request(const TcpRequest &request); // for testing
 
   private:
     void send_header_len_and_magic_bytes(uint32_t len, tcp::socket &socket);

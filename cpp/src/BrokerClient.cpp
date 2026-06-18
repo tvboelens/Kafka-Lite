@@ -75,5 +75,20 @@ TcpResponse BrokerClient::recv_response(tcp::socket &socket) {
                 recv_bytes.size());
     return TcpResponse::from_bytes(response_bytes);
 }
+
+TcpResponse BrokerClient::send_raw_request(const TcpRequest &request) {
+    tcp::socket socket(io_context_);
+    tcp::resolver resolver(io_context_);
+    tcp::resolver::results_type endpoints =
+        resolver.resolve("localhost", std::to_string(port_));
+    boost::asio::connect(socket, endpoints);
+    auto header_bytes = request.headers.to_bytes();
+    uint32_t len = header_bytes.size();
+    send_header_len_and_magic_bytes(len, socket);
+    boost::asio::write(socket, boost::asio::buffer(header_bytes));
+    send_payload(socket, request.payload);
+    return recv_response(socket);
+}
+
 } // namespace broker
 } // namespace kafka_lite
