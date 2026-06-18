@@ -25,7 +25,7 @@ void FakeBrokerCore::submit_append(const AppendData &data,
     }
     records_.push_back(data.data);
     std::error_code ec;
-    callback(records_.size(), ec);
+    callback(records_.size() - 1, ec);
 }
 
 void FakeBrokerCore::submit_fetch(const FetchData &data,
