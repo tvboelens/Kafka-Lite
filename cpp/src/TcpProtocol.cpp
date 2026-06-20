@@ -205,6 +205,9 @@ TcpResponse TcpResponse::makeResponse(const boost::uuids::uuid &correlation_id,
         else if (ec.value() ==
                  std::make_error_code(std::errc::io_error).value())
             response.response_code = 0x81;
+        else if (ec.value() ==
+                 std::make_error_code(std::errc::bad_message).value())
+            response.response_code = 0x05;
         else
             response.response_code = 0xFF;
         response.payload.reset();

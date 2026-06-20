@@ -23,6 +23,7 @@ set(BROKER_LIB_SOURCES
     src/AppendQueue.cpp
     src/BrokerCore.cpp
 	src/BrokerServer.cpp
+    src/RecordManager.cpp
     src/TcpProtocol.cpp
 )
 
@@ -33,7 +34,6 @@ set(TEST_SOURCES
     tests/TcpProtocolTests.cpp
     src/BrokerClient.cpp
     src/FakeBrokerCore.cpp
-    src/RecordManager.cpp
 )
 
 

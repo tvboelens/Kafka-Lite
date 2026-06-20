@@ -219,7 +219,12 @@ TEST(TcpProtocolTests, tcp_response_from_offset_ec) {
            0xc0, 0x4f, 0xd4, 0x30, 0xc8}},
          10,
          std::make_error_code(std::errc::address_in_use),
-         0xff}};
+         0xff},
+        {{{0x6b, 0xa7, 0xb8, 0x10, 0x9f, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00,
+           0xc0, 0x4f, 0xd4, 0x30, 0xc8}},
+         10,
+         std::make_error_code(std::errc::bad_message),
+         0x05}};
     for (const auto &test : tests) {
         auto response = TcpResponse::makeResponse(test.correlation_id,
                                                   test.offset, test.ec);

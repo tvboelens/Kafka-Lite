@@ -1,5 +1,5 @@
-#include "../include/ByteSwap.h"
 #include "../include/RecordManager.h"
+#include "../include/ByteSwap.h"
 #include <boost/crc.hpp>
 #include <cstddef>
 #include <cstdint>
@@ -67,6 +67,26 @@ RecordManager::extract_records(const std::vector<uint8_t> bytes) {
         result.push_back({.checksum = checksum, .payload = payload});
     }
     return result;
+}
+
+bool RecordManager::check_integrity(const std::vector<uint8_t> &bytes) {
+    uint32_t record_checksum = 0;
+    std::memcpy(&record_checksum, bytes.data() + sizeof(uint32_t),
+                sizeof(record_checksum));
+    if (byteswap::is_big_endian())
+        record_checksum = byteswap::byteswap32(record_checksum);
+    crc32c_type crc32c;
+    crc32c.process_bytes(bytes.data() + 2 * sizeof(uint32_t),
+                         bytes.size() - 2 * sizeof(uint32_t));
+    auto computed_checksum = crc32c.checksum();
+    return record_checksum == computed_checksum;
+}
+
+bool RecordManager::check_integrity(const Record &record) {
+    crc32c_type crc32c;
+    crc32c.process_bytes(record.payload.data(), record.payload.size());
+    auto checksum = crc32c.checksum();
+    return checksum == record.checksum;
 }
 
 } // namespace broker

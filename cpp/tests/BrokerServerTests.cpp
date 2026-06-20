@@ -166,6 +166,21 @@ TEST_F(BrokerServerTests, append_fetch_multiple) {
 // server should reject if checksum is wrong
 TEST_F(BrokerServerTests, append_wrong_checksum) {
     BrokerClient client(server_.port());
+    std::vector<uint8_t> payload{1, 2, 3, 4};
+    auto record = RecordManager::create_record(payload);
+    if (record.checksum != 0) {
+        record.checksum = 0;
+    } else {
+        record.checksum = 1;
+    }
+    payload = record.to_bytes_with_len();
+    boost::uuids::random_generator generator;
+    auto correlation_id = generator();
+    TcpHeaders headers(correlation_id, 0, RequestType::Append, 0);
+    TcpRequest request{.headers = headers, .payload = payload};
+    auto response = client.send_raw_request(request);
+    ASSERT_EQ(response.response_code, 0x5);
+    ASSERT_FALSE(response.payload.has_value());
 }
 
 } // namespace broker

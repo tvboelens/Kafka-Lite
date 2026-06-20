@@ -1,4 +1,5 @@
 #include "../include/BrokerCore.h"
+#include "../include/RecordManager.h"
 #include <atomic>
 #include <cstdint>
 #include <exception>
@@ -43,6 +44,10 @@ void BrokerCore::submit_append(const AppendData &data,
                status_ == BrokerCoreStatus::Recovering) {
         while (status_ != BrokerCoreStatus::Active)
             ; // Block appends to avoid appends during recovery
+    }
+    if (!RecordManager::check_integrity(data.data)) {
+        callback(0, std::make_error_code(std::errc::bad_message));
+        return;
     }
     AppendJob job;
     job.payload = data.data;

@@ -80,7 +80,7 @@ struct TcpResponse {
     static TcpResponse from_bytes(const std::vector<uint8_t> &bytes);
     static TcpResponse
     makeErrorResponse(const boost::uuids::uuid &correlation_id,
-                        ParseError error);
+                      ParseError error);
     static TcpResponse makeResponse(const boost::uuids::uuid &correlation_id,
                                     uint64_t offset, const std::error_code &ec);
     static TcpResponse makeResponse(const boost::uuids::uuid &correlation_id,
