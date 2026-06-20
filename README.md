@@ -3,8 +3,9 @@
 kafka-lite is an exploratory systems programming project inspired by Apache Kafka.
 The goal is to implement a minimal broker in order to better understand the design
 and trade-offs of log-based storage, concurrency, and disk-backed systems.
+kafka-lite is currently an end-to-end prototype consisting of a segmented log storage engine, a custom TCP protocol, an asynchronous Boost.Asio networking layer, and a minimal client used for integration testing.
 
-The broker is written in C++, with supporting components (producer/consumer clients, controllers) planned in Go.
+The broker is written in C++, with supporting components (producer/consumer clients, controllers) planned in Go and Rust.
 
 ## Getting started
 ### Prerequisites
@@ -16,57 +17,57 @@ The broker is written in C++, with supporting components (producer/consumer clie
 ## Building
 Run 
 ```
-cmake -B build_dir -S repo_dir
+cmake -B build_dir -S repo_dir -DCMAKE_BUILD_TYPE=Release
 ```
-to build the targets `Broker` and `TestSuite`. As of now `Broker` is not fully functional yet, but the `TestSuite` is.
+(or use build type Debug if you want) to generate the Makefiles, move to the build directory, and run `make` to build the targets `Broker` and `TestSuite`. Optionally use the `-j` flag when running `make` to speed up compilation.
 
 Including Boost might prove to be tricky. `CMakeLists.txt` is written for a Boost installation that has Boost.Asio and Boost.CRC as header-only libraries. This is hopefully the case on all platforms, but if not you may need to alter `CMakeLists.txt` to check for certain components in the `find_package` command and might also need to directly link against Boost.Asio and Boost.CRC.
 
 ## Current Status
-The project is in an early stage. At present, only the storage engine of the broker
-has been (partially) implemented. The focus so far has been on correctness and data
-layout rather than feature completeness or performance tuning.
+The broker is close to being functional, all of the core components are implemented and most of them tested.
 
-## Implemented components
-### Log Storage Engine
-
-The storage engine is based on an append-only log divided into segments.
-
-Current features include:
+### Implemented and tested components
+#### Log Storage Engine
 - Append-only log with segmented files and rollover logic
 - Support for multiple concurrent reader threads and a single writer thread
+- A concurrency model that minimizes locking (i.e. mutex use), instead primarily synchronizing through atomics with acquire-release semantics.
 - Per-segment index for faster offset lookup
 - Memory-mapped (`mmap`) index files for sealed (read-only) segments
 - Crash recovery at startup: Invalid records are truncated
 
-### Testing
-The following features are tested
-- Single threaded writes to log segments
-- Single threaded reads from log segments
-- Segment rollover without concurrent reads
-- Single threaded writes to index
-- Single threaded lookups from index
-- Multiple segment recovery when files are complete (i.e. no corruption or partial writes)
-- Single segment recovery in case of partial write of last record
+#### Boost.Asio networking layer
+- Asynchronous TCP I/O (callback style)
+- Network layer tests via loopback and a client
 
+#### Minimal test client
+- Synchronous API (also via Boost.Asio)
+- Used for integration testing
+- No cli yet
+- Exercises the custom TCP protocol end-to-end
 
-### Concurrency Model
-The storage engine supports multiple concurrent readers and a single writer.
-Concurrency is managed primarily using atomics with acquire–release semantics,
-minimizing the use of mutexes. No guarantees of lock-freedom are made; the focus
-is on correctness and clear reasoning about memory visibility and ordering.
-
-
-## Design Focus
-This project prioritizes:
-- Clear concurrency design (single writer, multiple readers)
-- Explicit handling of on-disk data layout
-- Reasoning about ordering guarantees and correctness
-
-Performance optimization and fault tolerance are considered out of scope for now.
+#### Custom TCP protocol
+- Serialization/deserialization of TCP requests and responses
+- Protocol validation tests
 
 ## Next Steps
-- Expand unit tests for crash recovery
-- Write tests for multithreaded scenarios
-- Finish the broker core responsible for managing reader and writer threads
-- Add a minimal TCP-based network layer for client communication using asynchronous I/O (planned with Boost.Asio)
+### Missing pieces for Broker functionality
+- Test and validate BrokerCore
+- Add multithreaded tests for BrokerCore and the storage layer
+- Perform stress/endurance testing
+- Add configuration support
+- Finalize broker startup/runtime behavior
+
+### Other features
+- Client cli
+- Structured logging
+- Metrics and metadata
+
+### Performance roadmap (after Broker is functional)
+- Baseline throughput and latency benchmarks
+- Batched appends to reduce syscall overhead
+- sendfile-based fetch responses for zero-copy transfers
+- Handle backpressure
+- Sparse indexing
+- Multiple Boost.Asio I/O threads (this could be enabled earlier)
+- Investigating whether certain memcpy operations can be avoided
+- Profile and optimize hot paths
