@@ -17,7 +17,7 @@ The broker is written in C++, with supporting components (producer/consumer clie
 ## Building
 Run 
 ```
-cmake -B build_dir -S repo_dir -DCMAKE_BUILD_TYPE=Release
+cmake -B {build_dir} -S {repo_dir}/cpp -DCMAKE_BUILD_TYPE=Release
 ```
 (or use build type Debug if you want) to generate the Makefiles, move to the build directory, and run `make` to build the targets `Broker` and `TestSuite`. Optionally use the `-j` flag when running `make` to speed up compilation.
 
