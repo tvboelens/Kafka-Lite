@@ -1,6 +1,6 @@
 #include "../include/BrokerClient.h"
 #include "../include/ByteSwap.h"
-#include "../include/RecordProducer.h"
+#include "../include/RecordManager.h"
 #include <array>
 #include <boost/asio.hpp>
 #include <boost/uuid/random_generator.hpp>
@@ -23,7 +23,7 @@ TcpResponse BrokerClient::append(const std::vector<uint8_t> &payload) {
     random_generator generator;
     auto correlation_id = generator();
     TcpHeaders headers(correlation_id, 0, RequestType::Append, 0);
-    auto record = RecordProducer::create_record(payload);
+    auto record = RecordManager::create_record(payload);
     auto header_bytes = headers.to_bytes();
     tcp::socket socket(io_context_);
     tcp::resolver resolver(io_context_);

@@ -18,6 +18,7 @@ void FakeBrokerCore::stop() {
 
 void FakeBrokerCore::submit_append(const AppendData &data,
                                    AppendCallback callback) {
+    // std::errc::
     std::unique_lock<std::shared_mutex> lock(records_mutex_);
     if (stop_) {
         callback(0, std::make_error_code(std::errc::not_connected));

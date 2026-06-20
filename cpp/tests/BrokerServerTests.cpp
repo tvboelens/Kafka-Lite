@@ -2,7 +2,7 @@
 #include "../include/BrokerServer.h"
 #include "../include/ByteSwap.h"
 #include "../include/FakeBrokerCore.h"
-#include "../include/RecordProducer.h"
+#include "../include/RecordManager.h"
 #include <boost/uuid/random_generator.hpp>
 #include <cstddef>
 #include <cstdint>
@@ -18,7 +18,7 @@ namespace broker {
 class TestServer {
   public:
     TestServer()
-        : server_(49153, std ::make_unique<FakeBrokerCore>(), io_context_) {}
+        : server_(49153, std::make_unique<FakeBrokerCore>(), io_context_) {}
     void start() {
         io_context_thread = std::thread([this]() { io_context_.run(); });
     };
@@ -59,7 +59,7 @@ TEST_F(BrokerServerTests, append_ok) {
 TEST_F(BrokerServerTests, send_raw_append_request_ok) {
     BrokerClient client(server_.port());
     std::vector<uint8_t> payload{1, 2, 3, 4};
-    payload = RecordProducer::create_record(payload).to_bytes_with_len();
+    payload = RecordManager::create_record(payload).to_bytes_with_len();
     boost::uuids::random_generator generator;
     auto correlation_id = generator();
     TcpHeaders headers(correlation_id, 0, RequestType::Append, 0);
@@ -79,7 +79,7 @@ TEST_F(BrokerServerTests, send_raw_append_request_ok) {
 TEST_F(BrokerServerTests, append_unsupported_version) {
     BrokerClient client(server_.port());
     std::vector<uint8_t> payload{1, 2, 3, 4};
-    payload = RecordProducer::create_record(payload).to_bytes_with_len();
+    payload = RecordManager::create_record(payload).to_bytes_with_len();
     boost::uuids::random_generator generator;
     auto correlation_id = generator();
     TcpHeaders headers(correlation_id, 1, RequestType::Append, 0);
@@ -93,7 +93,7 @@ TEST_F(BrokerServerTests, append_unsupported_version) {
 TEST_F(BrokerServerTests, append_unsupported_flags) {
     BrokerClient client(server_.port());
     std::vector<uint8_t> payload{1, 2, 3, 4};
-    payload = RecordProducer::create_record(payload).to_bytes_with_len();
+    payload = RecordManager::create_record(payload).to_bytes_with_len();
     boost::uuids::random_generator generator;
     auto correlation_id = generator();
     TcpHeaders headers(correlation_id, 0, RequestType::Append, 1);
@@ -156,7 +156,7 @@ TEST_F(BrokerServerTests, append_fetch_multiple) {
         ASSERT_EQ(fetch_response.response_code, 0);
         ASSERT_TRUE(fetch_response.payload.has_value());
         auto records =
-            RecordProducer::extract_records(fetch_response.payload.value());
+            RecordManager::extract_records(fetch_response.payload.value());
         for (unsigned int j = 0; j < records.size(); ++j) {
             EXPECT_EQ(records[j].payload, payloads[j + i]);
         }

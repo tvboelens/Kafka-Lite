@@ -1,5 +1,5 @@
-#include "../include/RecordProducer.h"
 #include "../include/ByteSwap.h"
+#include "../include/RecordManager.h"
 #include <boost/crc.hpp>
 #include <cstddef>
 #include <cstdint>
@@ -40,7 +40,7 @@ std::vector<uint8_t> Record::to_bytes_with_len() {
     return bytes;
 }
 
-Record RecordProducer::create_record(const std::vector<uint8_t> &payload) {
+Record RecordManager::create_record(const std::vector<uint8_t> &payload) {
     crc32c_type crc32c;
     crc32c.process_bytes(payload.data(), payload.size());
     uint32_t checksum = crc32c.checksum();
@@ -48,7 +48,7 @@ Record RecordProducer::create_record(const std::vector<uint8_t> &payload) {
 }
 
 std::vector<Record>
-RecordProducer::extract_records(const std::vector<uint8_t> bytes) {
+RecordManager::extract_records(const std::vector<uint8_t> bytes) {
     size_t pos = 0;
     std::vector<Record> result;
     while (pos < bytes.size()) {

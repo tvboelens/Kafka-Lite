@@ -33,7 +33,7 @@ set(TEST_SOURCES
     tests/TcpProtocolTests.cpp
     src/BrokerClient.cpp
     src/FakeBrokerCore.cpp
-    src/RecordProducer.cpp
+    src/RecordManager.cpp
 )
 
 

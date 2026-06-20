@@ -1,5 +1,5 @@
-#ifndef RECORDPRODUCER_HH
-#define RECORDPRODUCER_HH
+#ifndef RecordManager_HH
+#define RecordManager_HH
 
 #include <cstdint>
 #include <vector>
@@ -14,7 +14,7 @@ struct Record {
     std::vector<uint8_t> to_bytes_with_len();
 };
 
-class RecordProducer {
+class RecordManager {
   public:
     static Record create_record(const std::vector<uint8_t> &payload);
     static std::vector<Record>
