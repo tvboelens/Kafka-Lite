@@ -32,7 +32,7 @@ TcpResponse BrokerClient::append(const std::vector<uint8_t> &payload) {
     boost::asio::connect(socket, endpoints);
     send_header_len_and_magic_bytes(header_bytes.size(), socket);
     boost::asio::write(socket, boost::asio::buffer(header_bytes));
-    send_payload(socket, record);
+    send_payload(socket, record.to_bytes_with_len());
     return recv_response(socket);
 }
 
