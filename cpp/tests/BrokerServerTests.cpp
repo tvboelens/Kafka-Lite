@@ -4,6 +4,7 @@
 #include "../include/FakeBrokerCore.h"
 #include "../include/RecordProducer.h"
 #include <boost/uuid/random_generator.hpp>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <gtest/gtest.h>
@@ -58,7 +59,7 @@ TEST_F(BrokerServerTests, append_ok) {
 TEST_F(BrokerServerTests, send_raw_append_request_ok) {
     BrokerClient client(server_.port());
     std::vector<uint8_t> payload{1, 2, 3, 4};
-    payload = RecordProducer::create_record(payload);
+    payload = RecordProducer::create_record(payload).to_bytes_with_len();
     boost::uuids::random_generator generator;
     auto correlation_id = generator();
     TcpHeaders headers(correlation_id, 0, RequestType::Append, 0);
@@ -78,7 +79,7 @@ TEST_F(BrokerServerTests, send_raw_append_request_ok) {
 TEST_F(BrokerServerTests, append_unsupported_version) {
     BrokerClient client(server_.port());
     std::vector<uint8_t> payload{1, 2, 3, 4};
-    payload = RecordProducer::create_record(payload);
+    payload = RecordProducer::create_record(payload).to_bytes_with_len();
     boost::uuids::random_generator generator;
     auto correlation_id = generator();
     TcpHeaders headers(correlation_id, 1, RequestType::Append, 0);
@@ -92,7 +93,7 @@ TEST_F(BrokerServerTests, append_unsupported_version) {
 TEST_F(BrokerServerTests, append_unsupported_flags) {
     BrokerClient client(server_.port());
     std::vector<uint8_t> payload{1, 2, 3, 4};
-    payload = RecordProducer::create_record(payload);
+    payload = RecordProducer::create_record(payload).to_bytes_with_len();
     boost::uuids::random_generator generator;
     auto correlation_id = generator();
     TcpHeaders headers(correlation_id, 0, RequestType::Append, 1);
@@ -112,18 +113,54 @@ TEST_F(BrokerServerTests, append_fetch_one) {
     EXPECT_EQ(append_response.payload->size(), sizeof(uint64_t));
     uint64_t offset = -1;
     std::memcpy(&offset, append_response.payload->data(), sizeof(offset));
-    if (byteswap::is_big_endian())
+    if (!byteswap::is_big_endian())
         offset = byteswap::byteswap64(offset);
     EXPECT_EQ(offset, 0);
 
     auto fetch_response = client.fetch(offset, 1024);
     ASSERT_EQ(fetch_response.response_code, 0);
     ASSERT_TRUE(fetch_response.payload.has_value());
-    ASSERT_EQ(fetch_response.payload->size(), payload.size() + 4);
+    ASSERT_EQ(fetch_response.payload->size(), payload.size() + 8);
     std::vector<uint8_t> fetch_payload(payload.size());
-    fetch_payload.assign(fetch_response.payload->begin() + 4,
+    fetch_payload.assign(fetch_response.payload->begin() + 8,
                          fetch_response.payload->end());
     ASSERT_EQ(fetch_payload, payload);
+}
+
+TEST_F(BrokerServerTests, append_fetch_multiple) {
+    BrokerClient client(server_.port());
+    std::vector<uint8_t> payload;
+    std::vector<std::vector<uint8_t>> payloads;
+    payloads.reserve(100);
+    for (unsigned int i = 0; i < 100; ++i) {
+        payload.push_back(i % 7);
+        payloads.push_back(payload);
+    }
+    std::vector<uint64_t> offsets;
+    uint64_t offset = -1;
+    for (const auto &payload : payloads) {
+        auto append_response = client.append(payload);
+        ASSERT_EQ(append_response.response_code, 0);
+        ASSERT_TRUE(append_response.payload.has_value());
+        EXPECT_EQ(append_response.payload->size(), sizeof(uint64_t));
+        std::memcpy(&offset, append_response.payload->data(), sizeof(offset));
+        if (!byteswap::is_big_endian())
+            offset = byteswap::byteswap64(offset);
+        offsets.push_back(offset);
+    }
+    for (auto it = offsets.begin(); it != offsets.end(); ++it) {
+        ASSERT_EQ(*it, it - offsets.begin());
+    }
+    for (unsigned int i = 0; i < 100; ++i) {
+        auto fetch_response = client.fetch(i, 4096);
+        ASSERT_EQ(fetch_response.response_code, 0);
+        ASSERT_TRUE(fetch_response.payload.has_value());
+        auto records =
+            RecordProducer::extract_records(fetch_response.payload.value());
+        for (unsigned int j = 0; j < records.size(); ++j) {
+            EXPECT_EQ(records[j].payload, payloads[j + i]);
+        }
+    }
 }
 
 // server should reject if checksum is wrong
