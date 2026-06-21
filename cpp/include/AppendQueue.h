@@ -28,7 +28,7 @@ struct AppendJob {
 class AppendQueue {
   public:
     void push(AppendJob &job);
-    void wait_and_pop(AppendJob &job);
+    bool wait_and_pop(AppendJob &job);
 
   private:
     std::queue<AppendJob> jobs_;

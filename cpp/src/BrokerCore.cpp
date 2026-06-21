@@ -12,14 +12,14 @@ namespace kafka_lite {
 namespace broker {
 
 BrokerCore::BrokerCore(const std::filesystem::path &dir, uint64_t segment_size)
-    : status_(BrokerCoreStatus::Starting), stop_(false),
-      append_log_(dir, segment_size),
-      writer_thread(&BrokerCore::writerLoop, this) {}
+    : fetch_calls_counter_(0), status_(BrokerCoreStatus::Starting),
+      stop_(false), append_log_(dir, segment_size) {}
 
 BrokerCore::~BrokerCore() { stop(); }
 
 void BrokerCore::start() {
     append_log_.start();
+    writer_thread = std::thread(&BrokerCore::writerLoop, this);
     status_ = BrokerCoreStatus::Active;
 }
 
@@ -43,7 +43,8 @@ void BrokerCore::submit_append(const AppendData &data,
     } else if (status_ == BrokerCoreStatus::Starting ||
                status_ == BrokerCoreStatus::Recovering) {
         while (status_ != BrokerCoreStatus::Active)
-            ; // Block appends to avoid appends during recovery
+            std::this_thread::sleep_for(
+                50ms); // Block appends to avoid appends during recovery
     }
     if (!RecordManager::check_integrity(data.data)) {
         callback(0, std::make_error_code(std::errc::bad_message));
@@ -67,7 +68,7 @@ void BrokerCore::submit_fetch(const FetchData &data, FetchCallback callback) {
                status_ == BrokerCoreStatus::Recovering) {
         while (status_ != BrokerCoreStatus::Active)
             std::this_thread::sleep_for(
-                300ms); // Block reads to avoid appends during recovery
+                50ms); // Block reads to avoid appends during recovery
     }
     std::error_code ec;
     FetchResult result;
@@ -83,7 +84,8 @@ void BrokerCore::submit_fetch(const FetchData &data, FetchCallback callback) {
 void BrokerCore::writerLoop() {
     while (!stop_.load()) {
         AppendJob job;
-        append_queue_.wait_and_pop(job);
+        if (!append_queue_.wait_and_pop(job))
+            continue;
         AppendData append_data{job.payload};
         std::error_code ec;
         uint64_t offset;

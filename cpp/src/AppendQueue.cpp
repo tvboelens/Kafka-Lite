@@ -1,4 +1,5 @@
 #include "../include/AppendQueue.h"
+#include <chrono>
 #include <mutex>
 
 namespace kafka_lite {
@@ -21,11 +22,15 @@ void AppendQueue::push(AppendJob &job) {
     cv_.notify_one();
 }
 
-void AppendQueue::wait_and_pop(AppendJob &job) {
+bool AppendQueue::wait_and_pop(AppendJob &job) {
     std::unique_lock<std::mutex> lock(mutex_);
-    cv_.wait(lock, [this] { return !jobs_.empty(); });
+    bool job_queue_nonempty = cv_.wait_for(lock, std::chrono::milliseconds(10),
+                                           [this] { return !jobs_.empty(); });
+    if (!job_queue_nonempty)
+        return false;
     job = std::move(jobs_.front());
     jobs_.pop();
+    return true;
 }
 } // namespace broker
 } // namespace kafka_lite
