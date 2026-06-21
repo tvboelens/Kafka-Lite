@@ -20,6 +20,7 @@ class RecordManager {
     static std::vector<Record>
     extract_records(const std::vector<uint8_t> bytes);
     static bool check_integrity(const std::vector<uint8_t> &bytes);
+    static bool check_integrity_with_len(const std::vector<uint8_t> &bytes);
     static bool check_integrity(const Record &record);
 };
 

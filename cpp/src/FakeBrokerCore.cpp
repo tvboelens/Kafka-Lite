@@ -24,7 +24,7 @@ void FakeBrokerCore::submit_append(const AppendData &data,
         callback(0, std::make_error_code(std::errc::not_connected));
         return;
     }
-    if (!RecordManager::check_integrity(data.data)) {
+    if (!RecordManager::check_integrity_with_len(data.data)) {
         callback(0, std::make_error_code(std::errc::bad_message));
         return;
     }

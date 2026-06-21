@@ -71,15 +71,21 @@ RecordManager::extract_records(const std::vector<uint8_t> bytes) {
 
 bool RecordManager::check_integrity(const std::vector<uint8_t> &bytes) {
     uint32_t record_checksum = 0;
-    std::memcpy(&record_checksum, bytes.data() + sizeof(uint32_t),
-                sizeof(record_checksum));
+    std::memcpy(&record_checksum, bytes.data(), sizeof(record_checksum));
     if (byteswap::is_big_endian())
         record_checksum = byteswap::byteswap32(record_checksum);
     crc32c_type crc32c;
-    crc32c.process_bytes(bytes.data() + 2 * sizeof(uint32_t),
-                         bytes.size() - 2 * sizeof(uint32_t));
+    crc32c.process_bytes(bytes.data() + sizeof(uint32_t),
+                         bytes.size() - sizeof(uint32_t));
     auto computed_checksum = crc32c.checksum();
     return record_checksum == computed_checksum;
+}
+
+bool RecordManager::check_integrity_with_len(
+    const std::vector<uint8_t> &bytes) {
+    std::vector<uint8_t> bytes_without_len;
+    bytes_without_len.assign(bytes.begin() + sizeof(uint32_t), bytes.end());
+    return check_integrity(bytes_without_len);
 }
 
 bool RecordManager::check_integrity(const Record &record) {
