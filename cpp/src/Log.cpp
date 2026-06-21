@@ -84,7 +84,7 @@ FetchResult Log::fetch(const FetchData &data) const {
                     temp_result.result_buf.size());
         curr_offset = segment->getPublishedOffset() + 1;
     } while (result.result_buf.size() < data.max_bytes &&
-             segment != active_segment_);
+             segment != active_segment_ && !temp_result.result_buf.empty());
     return result;
 }
 

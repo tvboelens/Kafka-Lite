@@ -24,7 +24,7 @@ void AppendQueue::push(AppendJob &job) {
 
 bool AppendQueue::wait_and_pop(AppendJob &job) {
     std::unique_lock<std::mutex> lock(mutex_);
-    bool job_queue_nonempty = cv_.wait_for(lock, std::chrono::milliseconds(10),
+    bool job_queue_nonempty = cv_.wait_for(lock, std::chrono::milliseconds(50),
                                            [this] { return !jobs_.empty(); });
     if (!job_queue_nonempty)
         return false;
