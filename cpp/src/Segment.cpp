@@ -5,8 +5,11 @@
 #include <cstring>
 #include <fcntl.h>
 #include <filesystem>
+#include <iostream>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
+#include <string>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -112,6 +115,13 @@ Segment::~Segment() {
 }
 
 FetchResult Segment::read(uint64_t offset, size_t max_bytes) const {
+    if (offset < base_offset_) {
+        std::stringstream msg;
+        msg << "offset smaller than base offset, offset = " << offset
+            << ", base offset = " << base_offset_;
+        throw std::runtime_error(msg.str());
+    }
+
     // use acquire semantics to ensure synchronization with append
     uint64_t current_offset = offset,
              pub_offset = published_offset_.load(std::memory_order_acquire),
