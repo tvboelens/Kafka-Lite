@@ -19,13 +19,18 @@ class BrokerCore : public BrokerCoreIfc {
     BrokerCore(const std::filesystem::path &dir, uint64_t segment_size);
     ~BrokerCore();
 
-    void submit_append(const AppendData &data, AppendCallback callback) override;
+    void submit_append(const AppendData &data,
+                       AppendCallback callback) override;
     void submit_fetch(const FetchData &data, FetchCallback callback) override;
     void start() override;
     void stop() override;
+    uint64_t get_published_offset() override {
+        return append_log_.getPublishedOffset();
+    }
+
   private:
     void writerLoop();
-    
+
     AppendQueue append_queue_;
     Log append_log_;
     BrokerCoreStatus status_;

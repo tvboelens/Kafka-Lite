@@ -4,6 +4,7 @@
 #include "AppendQueue.h"
 #include "Log.h"
 #include "Segment.h"
+#include <cstdint>
 #include <functional>
 
 namespace kafka_lite {
@@ -20,6 +21,7 @@ class BrokerCoreIfc {
                               FetchCallback callback) = 0;
     virtual void start() = 0;
     virtual void stop() = 0;
+    virtual uint64_t get_published_offset() = 0;
 };
 
 } // namespace broker

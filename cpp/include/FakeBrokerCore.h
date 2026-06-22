@@ -17,6 +17,7 @@ class FakeBrokerCore : public BrokerCoreIfc {
     void submit_fetch(const FetchData &data, FetchCallback callback) override;
     void start() override;
     void stop() override;
+    uint64_t get_published_offset() override;
 
   private:
     std::vector<std::vector<uint8_t>> records_;

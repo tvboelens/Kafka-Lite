@@ -17,6 +17,11 @@ void FakeBrokerCore::stop() {
     stop_ = true;
 }
 
+uint64_t FakeBrokerCore::get_published_offset() {
+    std::shared_lock<std::shared_mutex> lock(records_mutex_);
+    return records_.size();
+}
+
 void FakeBrokerCore::submit_append(const AppendData &data,
                                    AppendCallback callback) {
     std::unique_lock<std::shared_mutex> lock(records_mutex_);
