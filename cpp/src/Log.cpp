@@ -74,7 +74,7 @@ FetchResult Log::fetch(const FetchData &data) const {
     std::shared_ptr<Segment> segment;
     do {
         segment = findSegment(curr_offset);
-        temp_result = segment->read(data.offset, curr_max_bytes);
+        temp_result = segment->read(curr_offset, curr_max_bytes);
         curr_result_size = result.result_buf.size();
         curr_max_bytes -= temp_result.result_buf.size();
         result.result_buf.resize(curr_result_size +
