@@ -3,7 +3,6 @@
 
 #include "AppendQueue.h"
 #include "Log.h"
-#include "Segment.h"
 #include <cstdint>
 #include <functional>
 

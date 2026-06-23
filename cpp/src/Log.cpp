@@ -68,7 +68,8 @@ void Log::recover(const std::vector<std::string> &segment_filenames) {
 FetchResult Log::fetch(const FetchData &data) const {
     if (status_ != LogStatus::Open)
         throw std::logic_error("Reading from log requires status open.");
-    FetchResult result, temp_result;
+    FetchResult result;
+    SegmentReadResult temp_result;
     uint64_t curr_offset = data.offset;
     size_t curr_result_size, curr_max_bytes = data.max_bytes;
     std::shared_ptr<Segment> segment;
@@ -82,7 +83,7 @@ FetchResult Log::fetch(const FetchData &data) const {
         std::memcpy(result.result_buf.data() + curr_result_size,
                     temp_result.result_buf.data(),
                     temp_result.result_buf.size());
-        curr_offset = segment->getPublishedOffset() + 1;
+        curr_offset = temp_result.last_read_offset + 1;
     } while (result.result_buf.size() < data.max_bytes &&
              segment != active_segment_ && !temp_result.result_buf.empty());
     return result;
@@ -107,6 +108,7 @@ void Log::rollover() {
          sealed_segment = std::make_shared<Segment>(
              dir_, old_base_offset, new_base_offset - 1, max_segment_size_,
              SegmentState::Sealed);
+    active_segment_->flush();
 
     {
         std::unique_lock<std::shared_mutex> lock(segments_mutex_);
@@ -142,6 +144,8 @@ uint64_t Log::getPublishedOffset() {
 }
 
 bool Log::activeSegmentIsFull() { return active_segment_->isFull(); }
+
+void Log::flush() { active_segment_->flush(); }
 
 } // namespace broker
 } // namespace kafka_lite

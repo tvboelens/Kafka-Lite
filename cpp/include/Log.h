@@ -15,12 +15,17 @@ struct AppendData {
     std::vector<uint8_t> data;
 };
 
+struct FetchResult {
+    std::vector<uint8_t> result_buf;
+    std::vector<SendfileData> sendfile_data;
+};
+
 struct FetchData {
     uint64_t offset;
     size_t max_bytes;
 };
 
-enum class LogStatus {Open, Closed};
+enum class LogStatus { Open, Closed };
 
 class Log {
   public:
@@ -36,6 +41,7 @@ class Log {
     uint64_t append(const AppendData &data);
     void rollover();
     uint64_t getPublishedOffset();
+    void flush();
 
   private:
     std::vector<std::string> determineSegmentFilepaths();

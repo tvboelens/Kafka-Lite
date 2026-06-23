@@ -1,7 +1,7 @@
 #ifndef TCP_REQUEST_HH
 #define TCP_REQUEST_HH
 
-#include "../include/Segment.h"
+#include "../include/Log.h"
 #include <array>
 #include <boost/uuid.hpp>
 #include <cstdint>
