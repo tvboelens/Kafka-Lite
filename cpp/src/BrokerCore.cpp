@@ -1,12 +1,14 @@
 #include "../include/BrokerCore.h"
 #include "../include/RecordManager.h"
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <exception>
 #include <system_error>
 #include <thread>
 
 using namespace std::chrono_literals;
+using namespace std::chrono;
 
 namespace kafka_lite {
 namespace broker {
@@ -82,19 +84,28 @@ void BrokerCore::submit_fetch(const FetchData &data, FetchCallback callback) {
 }
 
 void BrokerCore::writerLoop() {
+    auto time = steady_clock::now();
+    unsigned int no_of_appends = 0;
     while (!stop_.load()) {
-        AppendJob job;
-        if (!append_queue_.wait_and_pop(job))
-            continue;
-        AppendData append_data{job.payload};
-        std::error_code ec;
-        uint64_t offset;
-        try {
-            offset = append_log_.append(append_data);
-        } catch (const std::exception &e) {
-            ec = make_error_code(std::errc::io_error);
+        auto jobs = append_queue_.wait_and_pop();
+        for (const auto &job : jobs) {
+            AppendData append_data{job.payload};
+            std::error_code ec;
+            uint64_t offset;
+            try {
+                offset = append_log_.append(append_data);
+                ++no_of_appends;
+            } catch (const std::exception &e) {
+                ec = make_error_code(std::errc::io_error);
+            }
+            job.callback(offset, ec);
         }
-        job.callback(offset, ec);
+        auto elapsed = steady_clock::now() - time;
+        if (elapsed > 500ms || no_of_appends > 100) {
+            append_log_.flush();
+            no_of_appends = 0;
+            time = steady_clock::now();
+        }
     }
 }
 } // namespace broker
