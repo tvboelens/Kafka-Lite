@@ -1,5 +1,6 @@
 #include "../include/BrokerCore.h"
 #include "../include/RecordManager.h"
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <gtest/gtest.h>
@@ -87,25 +88,36 @@ void TestMtAppender::append_loop(std::queue<Record> append_queue) {
 
 class TestMtFetcher : public std::enable_shared_from_this<TestMtFetcher> {
   public:
-    TestMtFetcher(std::unique_ptr<BrokerCore> &core, unsigned int no_of_threads)
-        : stopped_(false), no_of_threads_(no_of_threads), core_(core) {}
+    TestMtFetcher(std::unique_ptr<BrokerCore> &core, unsigned int no_of_threads,
+                  unsigned int no_of_records)
+        : stopped_(false), no_of_threads_(no_of_threads),
+          no_of_records_(no_of_records), core_(core) {}
+    ~TestMtFetcher() { stop(); }
     void stop() {
-        if (!stopped_) {
-            stopped_ = true;
+        if (!stopped_.load()) {
+            stopped_.store(true);
             for (auto &thread : fetch_threads_) {
                 if (thread.joinable())
                     thread.join();
             }
         }
     }
+    void wait() {
+        for (auto &thread : fetch_threads_) {
+            if (thread.joinable())
+                thread.join();
+        }
+        stopped_.store(true);
+    }
     void start() {
-        stopped_ = false;
+        stopped_.store(false);
         for (unsigned int i = 0; i < no_of_threads_; ++i) {
             fetch_threads_.push_back(std::thread(
                 [self = shared_from_this()]() { self->fetch_loop(); }));
         }
     }
     std::vector<std::vector<Record>> get_fetched_records() {
+        std::lock_guard lock(mutex_);
         return fetched_records_;
     }
 
@@ -113,30 +125,41 @@ class TestMtFetcher : public std::enable_shared_from_this<TestMtFetcher> {
     void fetch_loop();
 
     std::mutex mutex_;
-    unsigned int no_of_threads_;
+    unsigned int no_of_threads_, no_of_records_;
     std::vector<std::thread> fetch_threads_;
     std::vector<std::vector<Record>> fetched_records_;
     std::unique_ptr<BrokerCore> &core_;
-    bool stopped_;
+    std::atomic_bool stopped_;
 };
 
 void TestMtFetcher::fetch_loop() {
     uint64_t last_offset = 0;
-    std::vector<Record> fetched_records;
-    while (!stopped_) {
+    std::vector<Record> records;
+    while (!stopped_.load() && records.size() < no_of_records_) {
         std::vector<uint8_t> result_buf;
-        core_->submit_fetch({.offset = last_offset, .max_bytes = 8192},
-                            [&](const FetchResult &result, std::error_code ec) {
-                                result_buf = result.result_buf;
-                            });
-        auto fetch_result = RecordManager::extract_records(result_buf);
-        last_offset += fetch_result.size() + 1;
-        fetched_records.reserve(fetched_records.size() + fetch_result.size());
-        fetched_records.insert(fetched_records.end(), fetch_result.begin(),
-                               fetch_result.end());
+        auto published_offset = core_->get_published_offset();
+        if (published_offset - last_offset < 20 &&
+            published_offset < no_of_records_ - 1) {
+            continue;
+        }
+        while (last_offset < published_offset + 1) {
+            core_->submit_fetch(
+                {.offset = last_offset, .max_bytes = 8192},
+                [&](const FetchResult &result, std::error_code ec) {
+                    if (ec)
+                        result_buf.clear();
+                    else
+                        result_buf = result.result_buf;
+                });
+            auto fetch_result = RecordManager::extract_records(result_buf);
+            last_offset += fetch_result.size();
+            for (auto &record : fetch_result) {
+                records.push_back(record);
+            }
+        }
     }
     std::lock_guard lock(mutex_);
-    fetched_records_.push_back(fetched_records);
+    fetched_records_.push_back(records);
 }
 
 class BrokerCoreTests : public ::testing::Test {
@@ -151,7 +174,7 @@ class BrokerCoreTests : public ::testing::Test {
         for (unsigned int i = 0; i < no_of_records; ++i) {
             std::vector<uint8_t> payload;
             for (unsigned int j = i; j < i + record_len; ++j) {
-                payload.push_back(j % record_len);
+                payload.push_back(j % 256);
             }
             records[i % no_of_threads].push(
                 RecordManager::create_record(payload));
@@ -163,6 +186,7 @@ class BrokerCoreTests : public ::testing::Test {
     std::unique_ptr<BrokerCore> core_;
     void SetUp() override {
         dir_ = std::filesystem::current_path() / "Core";
+        std::filesystem::remove_all(dir_);
         core_ = std::make_unique<BrokerCore>(dir_, 2048);
         core_->start();
     }
@@ -173,7 +197,7 @@ class BrokerCoreTests : public ::testing::Test {
 };
 
 TEST_F(BrokerCoreTests, mt_append_read_result_after) {
-    auto append_queue = generate_records(100, 1000, 4);
+    auto append_queue = generate_records(500, 1000, 4);
     auto appender = std::make_shared<TestMtAppender>(core_);
     appender->set_append_queue(append_queue);
     appender->start();
@@ -205,8 +229,9 @@ TEST_F(BrokerCoreTests, mt_append_read_result_after) {
 }
 
 TEST_F(BrokerCoreTests, mt_append_mt_fetch_during) {
-    auto fetcher = std::make_shared<TestMtFetcher>(core_, 8);
-    auto append_queue = generate_records(100, 1000, 4);
+    unsigned int no_of_records = 1000;
+    auto fetcher = std::make_shared<TestMtFetcher>(core_, 8, no_of_records);
+    auto append_queue = generate_records(100, no_of_records, 4);
     auto appender = std::make_shared<TestMtAppender>(core_);
     appender->set_append_queue(append_queue);
     fetcher->start();
@@ -214,20 +239,22 @@ TEST_F(BrokerCoreTests, mt_append_mt_fetch_during) {
     while (appender.use_count() > 1) {
         std::this_thread::sleep_for(10ms);
     }
-    fetcher->stop();
     auto appended_records = appender->get_appended_records();
 
-    ASSERT_EQ(appended_records.size(), 1000);
+    ASSERT_EQ(appended_records.size(), no_of_records);
     for (auto it = appended_records.begin() + 1; it != appended_records.end();
          ++it) {
         EXPECT_TRUE((it - 1)->offset < it->offset);
     }
+    fetcher->wait();
     auto fetched_records = fetcher->get_fetched_records();
+    ASSERT_EQ(appended_records.size(), no_of_records);
     for (auto &records : fetched_records) {
-        ASSERT_TRUE(records.size() < appended_records.size());
+        ASSERT_EQ(records.size(), no_of_records);
         for (auto it = records.begin(); it != records.end(); ++it) {
             EXPECT_EQ(it->payload,
-                      appended_records[it - records.begin()].record.payload);
+                      appended_records[it - records.begin()].record.payload)
+                << it - records.begin();
         }
     }
 }

@@ -2,6 +2,7 @@
 #define SEGMENT_H
 
 #include <atomic>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <vector>
@@ -15,7 +16,7 @@ namespace broker {
 #define FILE_POS_INDEX_SIZE 4
 
 enum class SegmentState { Sealed, Active };
-enum class RecoveryResult { Recovered, Truncated, Corrupted};
+enum class RecoveryResult { Recovered, Truncated, Corrupted };
 
 struct IndexFileEntry {
     uint64_t offset;
@@ -28,7 +29,8 @@ struct SendfileData {
     int64_t file_offset;
 };
 
-struct FetchResult {
+struct SegmentReadResult {
+    uint64_t last_read_offset;
     std::vector<uint8_t> result_buf;
     std::vector<SendfileData> sendfile_data;
 };
@@ -40,15 +42,17 @@ class Index {
     ~Index();
     std::optional<IndexFileEntry> determineClosestIndex(uint64_t offset) const;
     void append(const IndexFileEntry &entry);
+    void flush();
     void seal(); // use only during recovery
   private:
     IndexFileEntry binarySearch(uint64_t offset, const char *buf,
+                                uint64_t file_size) const;
+    IndexFileEntry binarySearch(uint64_t offset, int fd,
                                 uint64_t file_size) const;
 
     SegmentState state_;
     std::filesystem::path dir_;
     const char *mmap_base_offset_;
-    std::vector<uint8_t> data_;
     int fd_;
     std::atomic<uint64_t> published_size_;
     uint64_t last_written_offset_;
@@ -57,12 +61,13 @@ class Index {
 class Segment {
   public:
     Segment(const std::filesystem::path &dir, uint64_t base_offset,
-            uint64_t max_size, SegmentState state);// Empty segment
+            uint64_t max_size, SegmentState state); // Empty segment
     Segment(const std::filesystem::path &dir, uint64_t base_offset,
-            uint64_t published_offset, uint64_t max_size, SegmentState state);// Nonempty segment
+            uint64_t published_offset, uint64_t max_size,
+            SegmentState state); // Nonempty segment
     ~Segment();
 
-    FetchResult read(uint64_t offset, size_t max_bytes) const;
+    SegmentReadResult read(uint64_t offset, size_t max_bytes) const;
     uint64_t append(const uint8_t *data, uint32_t len);
     uint64_t getBaseOffset() const { return base_offset_; }
     uint64_t getPublishedOffset() const {
@@ -78,8 +83,8 @@ class Segment {
 
   private:
     void init();
-    uint32_t determineFilePosition(uint64_t offset) const;
-    uint32_t determineFilePosition(uint64_t offset,
+    uint32_t determineFilePosition(uint64_t offset, uint64_t file_size) const;
+    uint32_t determineFilePosition(uint64_t offset, uint64_t file_size,
                                    const IndexFileEntry &entry) const;
 
     SegmentState state_;

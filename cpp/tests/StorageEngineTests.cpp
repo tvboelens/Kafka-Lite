@@ -1,25 +1,45 @@
+#include "../include/ByteSwap.h"
 #include "../include/Log.h"
+#include "../include/RecordManager.h"
 #include "../include/Segment.h"
 #include <algorithm>
 #include <boost/crc.hpp>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <gtest/gtest.h>
+#include <iostream>
+#include <limits>
 #include <optional>
 #include <vector>
 
-constexpr bool is_big_endian() {
+/* constexpr bool is_big_endian() {
     return std::endian::native == std::endian::big;
 }
 
 constexpr std::uint32_t byteswap32(std::uint32_t value) {
     return ((value & 0x000000FF) << 24) | ((value & 0x0000FF00) << 8) |
            ((value & 0x00FF0000) >> 8) | ((value & 0xFF000000) >> 24);
-}
+} */
 
 namespace kafka_lite {
 namespace broker {
+
+using namespace byteswap;
+
+std::vector<Record> generate_records(size_t record_len,
+                                     unsigned int no_of_records) {
+    std::vector<Record> records;
+    for (unsigned int i = 0; i < no_of_records; ++i) {
+        std::vector<uint8_t> payload;
+        for (unsigned int j = i; j < i + record_len; ++j) {
+            payload.push_back(j % 256);
+        }
+        records.push_back(RecordManager::create_record(payload));
+    }
+    return records;
+}
 
 class StorageEngineTests : public ::testing::Test {
   private:
@@ -31,6 +51,7 @@ class StorageEngineTests : public ::testing::Test {
   protected:
     void SetUp() override {
         dir_ = std::filesystem::current_path() / "StorageEngine";
+        std::filesystem::remove_all(dir_);
     }
     void TearDown() override;
 };
@@ -40,7 +61,7 @@ void StorageEngineTests::TearDown() { std::filesystem::remove_all(dir_); }
 TEST_F(StorageEngineTests, SegmentRW) {
     std::filesystem::path dir = getDir() / "SegmentRW";
     Segment segment(dir, 0, 32, SegmentState::Active);
-    FetchResult result = segment.read(0, 32);
+    SegmentReadResult result = segment.read(0, 32);
     ASSERT_TRUE(result.result_buf.empty());
     std::vector<uint8_t> data, result_buf;
     data.reserve(4);
@@ -55,8 +76,10 @@ TEST_F(StorageEngineTests, SegmentRW) {
          it != result.result_buf.end(); ++it) {
         result_buf.push_back(*it);
     }
-    ASSERT_EQ(result_buf, data);
-    ASSERT_EQ(segment.getBaseOffset(), segment.getPublishedOffset());
+    EXPECT_EQ(result_buf, data);
+    EXPECT_EQ(segment.getBaseOffset(), segment.getPublishedOffset());
+    EXPECT_EQ(result.last_read_offset, segment.getBaseOffset());
+    EXPECT_EQ(result.last_read_offset, segment.getPublishedOffset());
 };
 
 TEST_F(StorageEngineTests, SegmentRWMultiple) {
@@ -66,7 +89,7 @@ TEST_F(StorageEngineTests, SegmentRWMultiple) {
     datav.reserve(8);
     data.resize(4);
     std::vector<uint64_t> offsets;
-    FetchResult result;
+    SegmentReadResult result;
     {
         Segment segment(dir, 0, 32, SegmentState::Active);
 
@@ -86,12 +109,14 @@ TEST_F(StorageEngineTests, SegmentRWMultiple) {
         EXPECT_EQ(segment.getPublishedOffset(), 7);
         EXPECT_TRUE(segment.isFull());
         result = segment.read(7, 256);
+        EXPECT_EQ(result.last_read_offset, 7);
         ASSERT_EQ(result.result_buf.size(), 4 + SEGMENT_HEADER_SIZE);
         EXPECT_EQ(0, std::memcmp(datav[7].data(),
                                  result.result_buf.data() + SEGMENT_HEADER_SIZE,
                                  4 * sizeof(uint8_t)));
 
         result = segment.read(4, 256);
+        EXPECT_EQ(result.last_read_offset, 7);
         ASSERT_EQ(result.result_buf.size(), 4 * (4 + SEGMENT_HEADER_SIZE));
         for (int i = 4; i < 8; ++i) {
             EXPECT_EQ(
@@ -104,6 +129,7 @@ TEST_F(StorageEngineTests, SegmentRWMultiple) {
         }
 
         result = segment.read(8, 256);
+        EXPECT_EQ(result.last_read_offset, 0);
         EXPECT_TRUE(result.result_buf.empty());
     }
 
@@ -112,12 +138,14 @@ TEST_F(StorageEngineTests, SegmentRWMultiple) {
     EXPECT_EQ(segment.getPublishedOffset(), 7);
     EXPECT_TRUE(segment.getPublishedSize() > 0);
     result = segment.read(7, 256);
+    EXPECT_EQ(result.last_read_offset, 7);
     ASSERT_EQ(result.result_buf.size(), 4 + SEGMENT_HEADER_SIZE);
     EXPECT_EQ(0, std::memcmp(datav[7].data(),
                              result.result_buf.data() + SEGMENT_HEADER_SIZE,
                              4 * sizeof(uint8_t)));
 
     result = segment.read(4, 256);
+    EXPECT_EQ(result.last_read_offset, 7);
     ASSERT_EQ(result.result_buf.size(), 4 * (4 + SEGMENT_HEADER_SIZE));
     for (int i = 4; i < 8; ++i) {
         EXPECT_EQ(0,
@@ -130,6 +158,7 @@ TEST_F(StorageEngineTests, SegmentRWMultiple) {
     }
 
     result = segment.read(8, 256);
+    EXPECT_EQ(result.last_read_offset, 0);
     EXPECT_TRUE(result.result_buf.empty());
 }
 
@@ -139,10 +168,50 @@ TEST_F(StorageEngineTests, IsFull) {
     std::vector<uint8_t> data;
     data.push_back(1);
     uint64_t offset = segment.append(data.data(), sizeof(uint8_t));
-    FetchResult result = segment.read(0, 100);
+    SegmentReadResult result = segment.read(0, 100);
     ASSERT_EQ(result.result_buf.size(), SEGMENT_HEADER_SIZE + 1);
     EXPECT_TRUE(segment.isFull());
     EXPECT_EQ(data[0], result.result_buf[SEGMENT_HEADER_SIZE]);
+}
+
+TEST_F(StorageEngineTests, last_read_offset) {
+    std::filesystem::path dir = getDir() / "last_read_offset";
+    Segment segment(dir, 0, 4096, SegmentState::Active);
+    std::vector<uint8_t> rec_payload{1, 2, 3, 4, 5, 6, 7, 8};
+    std::vector<Record> record_vec;
+
+    for (unsigned int i = 0; i < 10; ++i) {
+        auto record = RecordManager::create_record(rec_payload);
+        record_vec.push_back(record);
+    }
+    size_t record_size = record_vec[0].to_bytes().size();
+    std::vector<uint64_t> offsets;
+    offsets.reserve(record_vec.size());
+    for (auto &record : record_vec) {
+        auto bytes = record.to_bytes();
+        offsets.push_back(segment.append(bytes.data(), bytes.size()));
+    }
+    for (auto it = offsets.begin(); it != offsets.end(); ++it) {
+        ASSERT_EQ(*it, it - offsets.begin());
+    }
+
+    SegmentReadResult result = segment.read(0, 5 * (record_size + 4));
+    EXPECT_TRUE(result.result_buf.size() <= 5 * (record_size + 4));
+    auto read_records = RecordManager::extract_records(result.result_buf);
+    for (auto &record : read_records) {
+        EXPECT_EQ(record.payload, rec_payload);
+    }
+    EXPECT_EQ(result.last_read_offset, 4);
+
+    result = segment.read(2, 5 * (record_size + 4));
+    EXPECT_TRUE(result.result_buf.size() <= 5 * (record_size + 4));
+    read_records = RecordManager::extract_records(result.result_buf);
+    for (auto &record : read_records) {
+        EXPECT_EQ(record.payload, rec_payload);
+    }
+    EXPECT_EQ(result.last_read_offset, 6);
+    result = segment.read(0, 4096);
+    EXPECT_EQ(result.last_read_offset, 9);
 }
 
 TEST_F(StorageEngineTests, LogReadWrite) {
@@ -785,6 +854,60 @@ TEST_F(StorageEngineTests, IndexFindWhenEmpty) {
     Index index(dir, 0, SegmentState::Active);
     auto entry = index.determineClosestIndex(0);
     ASSERT_FALSE(entry.has_value());
+}
+
+TEST_F(StorageEngineTests, log_rw_large) {
+    std::filesystem::path dir = getDir() / "log_rw_large";
+    Log log(dir, 2048);
+    log.start();
+
+    auto records = generate_records(100, 8000);
+    for (auto &record : records) {
+        log.append({record.to_bytes()});
+    }
+    auto fetch_result = log.fetch({0, 1000000});
+    auto fetched_records =
+        RecordManager::extract_records(fetch_result.result_buf);
+    ASSERT_EQ(records.size(), fetched_records.size());
+    for (auto it = records.begin(); it != records.end(); ++it) {
+        EXPECT_EQ(it->checksum, fetched_records[it - records.begin()].checksum);
+        EXPECT_EQ(it->payload, fetched_records[it - records.begin()].payload);
+    }
+}
+
+TEST_F(StorageEngineTests, segment_read_offset_invalid) {
+    std::filesystem::path dir = getDir() / "segment_read_offset_invalid";
+    Segment segment(dir, 0, 4096, SegmentState::Active);
+    auto records = generate_records(10, 100);
+    for (auto &record : records) {
+        segment.append(record.to_bytes().data(), record.to_bytes().size());
+    }
+    uint64_t offset = std::numeric_limits<uint64_t>::max();
+    auto fetch_result = segment.read(offset, 4096);
+    ASSERT_TRUE(fetch_result.result_buf.empty());
+    offset = std::numeric_limits<uint64_t>::min() - 1;
+    fetch_result = segment.read(offset, 4096);
+    ASSERT_TRUE(fetch_result.result_buf.empty());
+}
+
+TEST_F(StorageEngineTests, segment_read_max_bytes_invalid) {
+    std::filesystem::path dir = getDir() / "segment_read_offset_invalid";
+    Segment segment(dir, 0, 4096, SegmentState::Active);
+    auto records = generate_records(10, 100);
+    for (auto &record : records) {
+        segment.append(record.to_bytes().data(), record.to_bytes().size());
+    }
+    size_t max_bytes = std::numeric_limits<size_t>::max();
+    EXPECT_ANY_THROW(segment.read(50, max_bytes));
+    max_bytes = std::numeric_limits<size_t>::max() - 1;
+    auto fetch_result = segment.read(50, max_bytes);
+    auto fetched_records =
+        RecordManager::extract_records(fetch_result.result_buf);
+    EXPECT_EQ(fetched_records.size(), 50);
+    max_bytes = std::numeric_limits<size_t>::min() - 1;
+    EXPECT_ANY_THROW(segment.read(50, max_bytes));
+    max_bytes = -1;
+    EXPECT_ANY_THROW(segment.read(50, max_bytes));
 }
 
 } // namespace broker

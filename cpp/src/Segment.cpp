@@ -1,11 +1,16 @@
 #include "../include/Segment.h"
 #include "../include/ByteSwap.h"
+#include <atomic>
 #include <boost/crc.hpp>
+#include <cerrno>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <fcntl.h>
 #include <filesystem>
+#include <ios>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -35,7 +40,7 @@ bool write_u32_le(int fd, uint32_t value) {
     return bytes_written == sizeof(value);
 }
 
-bool write_u64_le(int fd, u_int64_t value) {
+bool write_u64_le(int fd, uint64_t value) {
     if (kafka_lite::byteswap::is_big_endian())
         value = kafka_lite::byteswap::byteswap64(value);
 
@@ -53,6 +58,57 @@ bool write_u64_le(int fd, u_int64_t value) {
         bytes_written += curr_write;
     }
     return bytes_written == sizeof(value);
+}
+
+uint64_t read_u64_le(int fd, uint32_t pos) {
+    uint64_t res;
+    ssize_t curr_read, bytes_read = 0;
+    while (bytes_read < sizeof(res)) {
+        curr_read = pread(fd, &res + bytes_read, sizeof(res) - bytes_read, pos);
+        if (curr_read < 0) {
+            if (errno == EINTR)
+                continue;
+            std::stringstream msg;
+            msg << "pread fail, fd = " << fd << ", errno = " << errno;
+            throw std::ios_base::failure(msg.str());
+        }
+        if (curr_read == 0) {
+            std::stringstream msg;
+            msg << "read_u32_le: pread fail, fd = " << fd
+                << ", 0 bytes read, total bytes read = " << bytes_read;
+            throw std::ios_base::failure(msg.str());
+        }
+        bytes_read += curr_read;
+    }
+    if (kafka_lite::byteswap::is_big_endian())
+        res = kafka_lite::byteswap::byteswap64(res);
+    return res;
+}
+
+uint32_t read_u32_le(int fd, uint32_t pos) {
+    uint32_t res;
+    ssize_t curr_read, bytes_read = 0;
+    while (bytes_read < sizeof(res)) {
+        curr_read = pread(fd, &res + bytes_read, sizeof(res) - bytes_read, pos);
+        if (curr_read < 0) {
+            if (errno == EINTR)
+                continue;
+            std::stringstream msg;
+            msg << "read_u32_le: pread fail, fd = " << fd
+                << ", errno = " << errno;
+            throw std::ios_base::failure(msg.str());
+        }
+        if (curr_read == 0) {
+            std::stringstream msg;
+            msg << "read_u64_le: pread fail, fd = " << fd
+                << ", 0 bytes read, total bytes read = " << bytes_read;
+            throw std::ios_base::failure(msg.str());
+        }
+        bytes_read += curr_read;
+    }
+    if (kafka_lite::byteswap::is_big_endian())
+        res = kafka_lite::byteswap::byteswap32(res);
+    return res;
 }
 
 namespace kafka_lite {
@@ -114,7 +170,7 @@ Segment::~Segment() {
         ::close(log_fd_);
 }
 
-FetchResult Segment::read(uint64_t offset, size_t max_bytes) const {
+SegmentReadResult Segment::read(uint64_t offset, size_t max_bytes) const {
     if (offset < base_offset_) {
         std::stringstream msg;
         msg << "offset smaller than base offset, offset = " << offset
@@ -122,26 +178,39 @@ FetchResult Segment::read(uint64_t offset, size_t max_bytes) const {
         throw std::runtime_error(msg.str());
     }
 
+    if (max_bytes == std::numeric_limits<size_t>::max()) {
+        std::stringstream msg;
+        msg << "max bytes exceeds numerical limits, max bytes = " << max_bytes;
+        throw std::runtime_error(msg.str());
+    }
+
     // use acquire semantics to ensure synchronization with append
     uint64_t current_offset = offset,
-             pub_offset = published_offset_.load(std::memory_order_acquire),
-             segment_size = published_size_.load(std::memory_order_acquire);
+             pub_offset = published_offset_.load(std::memory_order_acquire);
+    uint64_t pub_size = published_size_.load(std::memory_order_acquire);
 
-    if (offset > pub_offset ||
-        published_size_.load(std::memory_order_acquire) == 0)
+    if (offset > pub_offset || pub_size == 0)
         return {}; // May need to be changed if I want to use sendfile() in the
                    // future
 
-    FetchResult result;
+    SegmentReadResult result;
     /*
         len: 32 bits
         checksum: 32 bits (once we include it)
         payload: variable length
     */
-    uint32_t offset_file_position = determineFilePosition(offset);
+    const uint32_t offset_file_position =
+        determineFilePosition(offset, pub_size);
+    if (offset_file_position > pub_size) {
+        std::stringstream msg;
+        msg << "offset file pos beyond published size, offset file pos "
+            << offset_file_position << ", segment size = " << pub_size
+            << ", base offset = " << base_offset_ << ", offset = " << offset;
+        throw std::runtime_error(msg.str());
+    }
 
     size_t len;
-    if (segment_size - offset_file_position > max_bytes) {
+    if (pub_size - offset_file_position > max_bytes) {
         uint64_t current_offset = pub_offset;
         IndexFileEntry entry;
         do {
@@ -153,20 +222,40 @@ FetchResult Segment::read(uint64_t offset, size_t max_bytes) const {
                 entry.offset = offset;
                 entry.file_position = offset_file_position;
             }
-        } while (entry.file_position - offset_file_position > max_bytes);
+        } while ((entry.file_position > offset_file_position) &&
+                 (entry.file_position - offset_file_position > max_bytes));
 
-        uint32_t next_file_position = determineFilePosition(entry.offset + 1),
+        uint32_t next_file_position =
+                     determineFilePosition(entry.offset + 1, pub_size),
                  current_file_position = entry.file_position;
-        current_offset = entry.offset + 1;
-
+        current_offset = entry.offset;
         while (next_file_position - offset_file_position < max_bytes) {
             ++current_offset;
             current_file_position = next_file_position;
-            next_file_position = determineFilePosition(current_offset, entry);
+            next_file_position =
+                determineFilePosition(current_offset + 1, pub_size, entry);
         }
         len = current_file_position - offset_file_position;
-    } else
-        len = segment_size - offset_file_position;
+        // read does not include current_offset
+        result.last_read_offset = current_offset - 1;
+    } else {
+        // read until published EOF, put published offset might lag behind
+        // published size, therefore we must increase last_read_offset so that
+        // it corresponds to the last written offset inside the published size
+        len = pub_size - offset_file_position;
+        result.last_read_offset = pub_offset;
+        uint32_t record_len,
+            current_file_pos = determineFilePosition(pub_offset, pub_size);
+        record_len = read_u32_le(log_fd_, current_file_pos);
+        uint32_t next_file_pos =
+            current_file_pos + record_len + sizeof(record_len);
+        while (next_file_pos < pub_size) {
+            ++result.last_read_offset;
+            current_file_pos = next_file_pos;
+            record_len = read_u32_le(log_fd_, current_file_pos);
+            next_file_pos = current_file_pos + record_len + SEGMENT_HEADER_SIZE;
+        }
+    }
 
     // use pread for thread safety
     result.result_buf.resize(len);
@@ -222,53 +311,41 @@ uint64_t Segment::append(const uint8_t *data, uint32_t len) {
     uint64_t offset;
     if (published_size_.load(std::memory_order_acquire) == 0) {
         offset = base_offset_;
-        published_offset_.store(offset, std::memory_order_release);
     } else
-        offset = published_offset_.fetch_add(1, std::memory_order_release) + 1;
+        offset = published_offset_.load(std::memory_order_acquire) + 1;
+    uint64_t new_size = published_size_.fetch_add(
+        bytes_written + SEGMENT_HEADER_SIZE, std::memory_order_release);
+    published_offset_.store(offset, std::memory_order_release);
     IndexFileEntry index_data;
     index_data.offset = offset;
     index_data.file_position = static_cast<uint32_t>(pos);
     index_file_.append(index_data);
-
-    uint64_t new_size = published_size_.fetch_add(
-        bytes_written + SEGMENT_HEADER_SIZE, std::memory_order_release);
     return offset;
 }
 
-uint32_t Segment::determineFilePosition(uint64_t offset) const {
+uint32_t Segment::determineFilePosition(uint64_t offset,
+                                        uint64_t file_size) const {
     auto entry_opt = index_file_.determineClosestIndex(offset);
-    if (entry_opt.has_value())
-        return determineFilePosition(offset, entry_opt.value());
-    return determineFilePosition(offset, {base_offset_, 0});
+    if (entry_opt.has_value()) {
+        return determineFilePosition(offset, file_size, entry_opt.value());
+    }
+
+    return determineFilePosition(offset, file_size, {base_offset_, 0});
 }
 
-uint32_t Segment::determineFilePosition(uint64_t offset,
+uint32_t Segment::determineFilePosition(uint64_t offset, uint64_t file_size,
                                         const IndexFileEntry &entry) const {
     uint64_t current_offset = entry.offset;
     uint32_t record_len, current_file_pos = entry.file_position;
-    while (current_offset < offset) {
+    while (current_offset < offset && current_file_pos < file_size) {
         ++current_offset;
         size_t curr_read, bytes_read = 0;
-        while (bytes_read < FILE_POS_INDEX_SIZE) {
-            curr_read = pread(log_fd_, &record_len + bytes_read,
-                              FILE_POS_INDEX_SIZE - bytes_read,
-                              current_file_pos + bytes_read);
-            if (curr_read < 0) {
-                if (errno == EINTR)
-                    continue;
-                break;
-            }
-            if (curr_read == 0)
-                break;
-            bytes_read += curr_read;
-        }
-
-        if (bytes_read != FILE_POS_INDEX_SIZE)
-            throw std::ios_base::failure(
-                "Failed to read length bytes from log file.");
-        if (byteswap::is_big_endian())
-            record_len = byteswap::byteswap32(record_len);
+        record_len = read_u32_le(log_fd_, current_file_pos);
         current_file_pos += record_len + SEGMENT_HEADER_SIZE;
+        if (current_file_pos > file_size) {
+            throw std::runtime_error(
+                "tried to read past segment file boundary.");
+        }
     }
     return current_file_pos;
 }
@@ -295,8 +372,11 @@ Index::Index(const std::filesystem::path &dir, uint64_t base_offset,
         fd_ = open(index_file.c_str(), flags, mode);
     } while (fd_ == -1 && errno == EINTR);
 
-    if (fd_ == -1)
-        throw std::ios_base::failure("Failed to open index file.");
+    if (fd_ == -1) {
+        std::string msg = "Failed to open index file, errno = ";
+        msg += std::to_string(errno);
+        throw std::ios_base::failure(msg);
+    }
 
     if (state_ == SegmentState::Sealed) {
         struct stat st;
@@ -331,8 +411,7 @@ Index::determineClosestIndex(uint64_t offset) const {
     if (file_size == 0)
         return std::nullopt;
     if (state_ == SegmentState::Active)
-        return binarySearch(
-            offset, reinterpret_cast<const char *>(data_.data()), file_size);
+        return binarySearch(offset, fd_, file_size);
     return binarySearch(offset, mmap_base_offset_, file_size);
 }
 
@@ -345,13 +424,9 @@ void Index::append(const IndexFileEntry &data) {
             "Tried to write smaller offset than published to index.");
     if (!write_u64_le(fd_, data.offset))
         throw std::ios_base::failure("Failed to write offset to index file.");
-    data_.resize(data_.size() + INDEX_ENTRY_SIZE);
     uint64_t value = data.offset;
     if (byteswap::is_big_endian())
         value = byteswap::byteswap64(value);
-    std::memcpy(data_.data() + data_.size() - INDEX_ENTRY_SIZE, &value,
-                OFFSET_SIZE);
-
     if (!write_u32_le(fd_, data.file_position))
         throw std::ios_base::failure(
             "Failed to write file position to index file.");
@@ -362,8 +437,6 @@ void Index::append(const IndexFileEntry &data) {
     */
     if (byteswap::is_big_endian())
         fpos_index = byteswap::byteswap32(fpos_index);
-    std::memcpy(data_.data() + data_.size() - FILE_POS_INDEX_SIZE, &fpos_index,
-                FILE_POS_INDEX_SIZE);
     last_written_offset_ = data.offset;
     uint64_t size =
         published_size_.fetch_add(INDEX_ENTRY_SIZE, std::memory_order_release);
@@ -372,7 +445,7 @@ void Index::append(const IndexFileEntry &data) {
 IndexFileEntry Index::binarySearch(uint64_t offset, const char *buf,
                                    uint64_t file_size) const {
     // Entries have 12 bytes, 8 for the offset and 4 for the file position
-    IndexFileEntry entry;
+    IndexFileEntry entry{0, 0};
     uint64_t current_offset = 0, L_pos = 0,
              R_pos = file_size - INDEX_ENTRY_SIZE,
              diff = file_size / INDEX_ENTRY_SIZE - 1;
@@ -426,6 +499,47 @@ IndexFileEntry Index::binarySearch(uint64_t offset, const char *buf,
         entry.offset = byteswap::byteswap64(entry.offset);
         entry.file_position = byteswap::byteswap32(entry.file_position);
     }
+    return entry;
+}
+
+IndexFileEntry Index::binarySearch(uint64_t offset, int fd,
+                                   uint64_t file_size) const {
+    // Entries have 12 bytes, 8 for the offset and 4 for the file position
+    IndexFileEntry entry{0, 0};
+    uint64_t current_offset = 0, L = 0, R = L + file_size - INDEX_ENTRY_SIZE,
+             diff = file_size / INDEX_ENTRY_SIZE - 1;
+
+    // Check if the offset we are seeking is indexed at the start or end
+    current_offset = read_u64_le(fd, 0);
+    if (current_offset == offset) {
+        entry.offset = current_offset;
+        entry.file_position = read_u32_le(fd, sizeof(current_offset));
+        return entry;
+    }
+
+    current_offset = read_u64_le(fd, R);
+    if (current_offset == offset) {
+        entry.offset = current_offset;
+        entry.file_position = read_u32_le(fd, R + OFFSET_SIZE);
+        return entry;
+    }
+
+    // If not, do binary search
+    uint64_t M;
+    while (L < R) {
+        M = L + INDEX_ENTRY_SIZE * (diff / 2 + 1);
+        current_offset = read_u64_le(fd, M);
+        if (current_offset <= offset) {
+            L = M;
+            diff -= (diff / 2 + 1);
+        } else {
+            R = M - INDEX_ENTRY_SIZE;
+            diff /= 2;
+        }
+    }
+
+    entry.offset = read_u64_le(fd, L);
+    entry.file_position = read_u32_le(fd, L + OFFSET_SIZE);
     return entry;
 }
 
@@ -582,6 +696,31 @@ RecoveryResult Segment::recover() {
     published_size_.store(st.st_size);
     published_offset_.store(curr_offset - 1);
     return RecoveryResult::Recovered;
+}
+
+void Segment::flush() {
+    int rc;
+    do {
+        rc = fsync(log_fd_);
+        if (rc == -1 && errno != EINTR) {
+            std::stringstream msg;
+            msg << "Segment fsync failed, errno = " << errno;
+            throw std::ios_base::failure(msg.str());
+        }
+    } while (rc == -1);
+    index_file_.flush();
+}
+
+void Index::flush() {
+    int rc;
+    do {
+        rc = fsync(fd_);
+        if (rc == -1 && errno != EINTR) {
+            std::stringstream msg;
+            msg << "Segment fsync failed, errno = " << errno;
+            throw std::ios_base::failure(msg.str());
+        }
+    } while (rc == -1);
 }
 
 } // namespace broker
