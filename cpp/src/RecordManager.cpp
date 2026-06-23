@@ -4,6 +4,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <sstream>
+#include <stdexcept>
 #include <vector>
 
 namespace kafka_lite {
@@ -60,6 +62,12 @@ RecordManager::extract_records(const std::vector<uint8_t> bytes) {
         if (byteswap::is_big_endian()) {
             len = byteswap::byteswap32(len);
             checksum = byteswap::byteswap32(checksum);
+        }
+        if (len < sizeof(checksum)) {
+            std::stringstream ss;
+            ss << "Invalid len " << len << ", must be at least "
+               << sizeof(checksum);
+            throw std::runtime_error(ss.str());
         }
         std::vector<uint8_t> payload(len - sizeof(checksum));
         std::memcpy(payload.data(), bytes.data() + pos, payload.size());
