@@ -196,7 +196,7 @@ class BrokerCoreTests : public ::testing::Test {
     }
 };
 
-TEST_F(BrokerCoreTests, mt_append_read_result_after) {
+TEST_F(BrokerCoreTests, MtAppendReadResultAfter) {
     auto append_queue = generate_records(500, 1000, 4);
     auto appender = std::make_shared<TestMtAppender>(core_);
     appender->set_append_queue(append_queue);
@@ -228,7 +228,7 @@ TEST_F(BrokerCoreTests, mt_append_read_result_after) {
     }
 }
 
-TEST_F(BrokerCoreTests, mt_append_mt_fetch_during) {
+TEST_F(BrokerCoreTests, MtAppendMtFetchDuring) {
     unsigned int no_of_records = 1000;
     auto fetcher = std::make_shared<TestMtFetcher>(core_, 8, no_of_records);
     auto append_queue = generate_records(100, no_of_records, 4);

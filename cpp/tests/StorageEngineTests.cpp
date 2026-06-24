@@ -9,19 +9,9 @@
 #include <cstring>
 #include <filesystem>
 #include <gtest/gtest.h>
-#include <iostream>
 #include <limits>
 #include <optional>
 #include <vector>
-
-/* constexpr bool is_big_endian() {
-    return std::endian::native == std::endian::big;
-}
-
-constexpr std::uint32_t byteswap32(std::uint32_t value) {
-    return ((value & 0x000000FF) << 24) | ((value & 0x0000FF00) << 8) |
-           ((value & 0x00FF0000) >> 8) | ((value & 0xFF000000) >> 24);
-} */
 
 namespace kafka_lite {
 namespace broker {
@@ -174,7 +164,7 @@ TEST_F(StorageEngineTests, IsFull) {
     EXPECT_EQ(data[0], result.result_buf[SEGMENT_HEADER_SIZE]);
 }
 
-TEST_F(StorageEngineTests, last_read_offset) {
+TEST_F(StorageEngineTests, LastReadOffset) {
     std::filesystem::path dir = getDir() / "last_read_offset";
     Segment segment(dir, 0, 4096, SegmentState::Active);
     std::vector<uint8_t> rec_payload{1, 2, 3, 4, 5, 6, 7, 8};
@@ -856,7 +846,7 @@ TEST_F(StorageEngineTests, IndexFindWhenEmpty) {
     ASSERT_FALSE(entry.has_value());
 }
 
-TEST_F(StorageEngineTests, log_rw_large) {
+TEST_F(StorageEngineTests, LogRwLarge) {
     std::filesystem::path dir = getDir() / "log_rw_large";
     Log log(dir, 2048);
     log.start();
@@ -875,7 +865,7 @@ TEST_F(StorageEngineTests, log_rw_large) {
     }
 }
 
-TEST_F(StorageEngineTests, segment_read_offset_invalid) {
+TEST_F(StorageEngineTests, SegmentReadOffsetInvalid) {
     std::filesystem::path dir = getDir() / "segment_read_offset_invalid";
     Segment segment(dir, 0, 4096, SegmentState::Active);
     auto records = generate_records(10, 100);
@@ -890,7 +880,7 @@ TEST_F(StorageEngineTests, segment_read_offset_invalid) {
     ASSERT_TRUE(fetch_result.result_buf.empty());
 }
 
-TEST_F(StorageEngineTests, segment_read_max_bytes_invalid) {
+TEST_F(StorageEngineTests, SegmentReadMaxBytesInvalid) {
     std::filesystem::path dir = getDir() / "segment_read_offset_invalid";
     Segment segment(dir, 0, 4096, SegmentState::Active);
     auto records = generate_records(10, 100);

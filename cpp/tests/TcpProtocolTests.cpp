@@ -28,7 +28,7 @@ TcpRequest::to_specialized_type()
 integrity
 */
 
-TEST(TcpProtocolTests, header_append_request) {
+TEST(TcpProtocolTests, HeaderAppendRequest) {
     boost::uuids::uuid correlation_id = {{0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad,
                                           0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0,
                                           0x4f, 0xd4, 0x30, 0xc8}};
@@ -43,7 +43,7 @@ TEST(TcpProtocolTests, header_append_request) {
     EXPECT_EQ(header_read.getParseError(), ParseError::NO_ERROR);
 }
 
-TEST(TcpProtocolTests, header_fetch_request) {
+TEST(TcpProtocolTests, HeaderFetchRequest) {
     boost::uuids::uuid correlation_id = {{0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad,
                                           0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0,
                                           0x4f, 0xd4, 0x30, 0xc8}};
@@ -58,7 +58,7 @@ TEST(TcpProtocolTests, header_fetch_request) {
     EXPECT_EQ(header_read.getParseError(), ParseError::NO_ERROR);
 }
 
-TEST(TcpProtocolTests, header_wrong_protocol_version) {
+TEST(TcpProtocolTests, HeaderWrongProtocolVersion) {
     boost::uuids::uuid correlation_id = {{0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad,
                                           0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0,
                                           0x4f, 0xd4, 0x30, 0xc8}};
@@ -69,7 +69,7 @@ TEST(TcpProtocolTests, header_wrong_protocol_version) {
     EXPECT_EQ(header_read.getParseError(), ParseError::ERR_UNSUPPORTED_VERSION);
 }
 
-TEST(TcpProtocolTests, header_unknown_type) {
+TEST(TcpProtocolTests, HeaderUnknownType) {
     boost::uuids::uuid correlation_id = {{0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad,
                                           0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0,
                                           0x4f, 0xd4, 0x30, 0xc8}};
@@ -82,7 +82,7 @@ TEST(TcpProtocolTests, header_unknown_type) {
     EXPECT_EQ(header_read.getParseError(), ParseError::ERR_UNKNOWN_TYPE);
 }
 
-TEST(TcpProtocolTests, header_unknown_flags) {
+TEST(TcpProtocolTests, HeaderUnknownFlags) {
     boost::uuids::uuid correlation_id = {{0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad,
                                           0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0,
                                           0x4f, 0xd4, 0x30, 0xc8}};
@@ -94,7 +94,7 @@ TEST(TcpProtocolTests, header_unknown_flags) {
     EXPECT_EQ(header_read.getParseError(), ParseError::ERR_UNSUPPORTED_FLAGS);
 }
 
-TEST(TcpProtocolTests, header_missing_correlation_id) {
+TEST(TcpProtocolTests, HeaderMissingCorrelationId) {
     boost::uuids::uuid correlation_id = {{0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad,
                                           0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0,
                                           0x4f, 0xd4, 0x30, 0xc8}};
@@ -109,7 +109,7 @@ TEST(TcpProtocolTests, header_missing_correlation_id) {
               ParseError::ERR_MISSING_CORRELATION_ID);
 }
 
-TEST(TcpProtocolTests, tcp_request_to_append_request) {
+TEST(TcpProtocolTests, TcpTequestToAppendRequest) {
     boost::uuids::uuid correlation_id = {{0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad,
                                           0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0,
                                           0x4f, 0xd4, 0x30, 0xc8}};
@@ -129,7 +129,7 @@ struct TcpRequestToFetchRequestTest {
     uint32_t max_bytes;
 };
 
-TEST(TcpProtocolTests, tcp_request_to_fetch_request) {
+TEST(TcpProtocolTests, TcpTequestToFetchRequest) {
     std::vector<TcpRequestToFetchRequestTest> tests = {
         {{{{0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00,
             0xc0, 0x4f, 0xd4, 0x30, 0xc8}},
@@ -157,7 +157,7 @@ TEST(TcpProtocolTests, tcp_request_to_fetch_request) {
     }
 }
 
-TEST(TcpProtocolTests, tcp_response_to_bytes) {
+TEST(TcpProtocolTests, TcpResponseToBytes) {
     std::vector<TcpResponse> responses{
         {.correlation_id = {{0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1,
                              0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc8}},
@@ -191,7 +191,7 @@ struct TcpRequestFromOffsetEcTest {
     uint8_t expected_rc;
 };
 
-TEST(TcpProtocolTests, tcp_response_from_offset_ec) {
+TEST(TcpProtocolTests, TcpResponseFromOffsetEc) {
     std::vector<TcpRequestFromOffsetEcTest> tests = {
         {
             {{0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00,
@@ -249,7 +249,7 @@ struct TcpRequestFromParseErrorTest {
     uint8_t expected_rc;
 };
 
-TEST(TcpProtocolTests, tcp_response_from_parse_error) {
+TEST(TcpProtocolTests, TcpResponseFromParseError) {
     std::vector<TcpRequestFromParseErrorTest> tests = {
         {
             {{0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00,
@@ -302,7 +302,7 @@ struct TcpRequestFromFetchResultEcTest {
     uint8_t expected_rc;
 };
 
-TEST(TcpProtocolTests, tcp_response_from_fetch_result_ec) {
+TEST(TcpProtocolTests, TcpResponseFromFetchResultEc) {
     std::vector<TcpRequestFromFetchResultEcTest> tests = {
         {
             {{0x6b, 0xa7, 0xb8, 0x10, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00,

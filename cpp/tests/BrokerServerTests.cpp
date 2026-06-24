@@ -42,7 +42,7 @@ class BrokerServerTests : public ::testing::Test {
     TestServer server_;
 };
 
-TEST_F(BrokerServerTests, append_ok) {
+TEST_F(BrokerServerTests, AppendOk) {
     BrokerClient client(server_.port());
     std::vector<uint8_t> payload{1, 2, 3, 4};
     auto response = client.append(payload);
@@ -56,7 +56,7 @@ TEST_F(BrokerServerTests, append_ok) {
     EXPECT_EQ(offset, 0);
 }
 
-TEST_F(BrokerServerTests, send_raw_append_request_ok) {
+TEST_F(BrokerServerTests, SendRawAppendRequestOk) {
     BrokerClient client(server_.port());
     std::vector<uint8_t> payload{1, 2, 3, 4};
     payload = RecordManager::create_record(payload).to_bytes_with_len();
@@ -76,7 +76,7 @@ TEST_F(BrokerServerTests, send_raw_append_request_ok) {
     EXPECT_EQ(offset, 0);
 }
 
-TEST_F(BrokerServerTests, append_unsupported_version) {
+TEST_F(BrokerServerTests, AppendUnsupportedVersion) {
     BrokerClient client(server_.port());
     std::vector<uint8_t> payload{1, 2, 3, 4};
     payload = RecordManager::create_record(payload).to_bytes_with_len();
@@ -90,7 +90,7 @@ TEST_F(BrokerServerTests, append_unsupported_version) {
     ASSERT_FALSE(response.payload.has_value());
 }
 
-TEST_F(BrokerServerTests, append_unsupported_flags) {
+TEST_F(BrokerServerTests, AppendUnsupportedFlags) {
     BrokerClient client(server_.port());
     std::vector<uint8_t> payload{1, 2, 3, 4};
     payload = RecordManager::create_record(payload).to_bytes_with_len();
@@ -104,7 +104,7 @@ TEST_F(BrokerServerTests, append_unsupported_flags) {
     ASSERT_FALSE(response.payload.has_value());
 }
 
-TEST_F(BrokerServerTests, append_fetch_one) {
+TEST_F(BrokerServerTests, AppendFetchOne) {
     BrokerClient client(server_.port());
     std::vector<uint8_t> payload{1, 2, 3, 4};
     auto append_response = client.append(payload);
@@ -127,7 +127,7 @@ TEST_F(BrokerServerTests, append_fetch_one) {
     ASSERT_EQ(fetch_payload, payload);
 }
 
-TEST_F(BrokerServerTests, append_fetch_multiple) {
+TEST_F(BrokerServerTests, AppendFetchMultiple) {
     BrokerClient client(server_.port());
     std::vector<uint8_t> payload;
     std::vector<std::vector<uint8_t>> payloads;
@@ -164,7 +164,7 @@ TEST_F(BrokerServerTests, append_fetch_multiple) {
 }
 
 // server should reject if checksum is wrong
-TEST_F(BrokerServerTests, append_wrong_checksum) {
+TEST_F(BrokerServerTests, AppendWrongChecksum) {
     BrokerClient client(server_.port());
     std::vector<uint8_t> payload{1, 2, 3, 4};
     auto record = RecordManager::create_record(payload);
