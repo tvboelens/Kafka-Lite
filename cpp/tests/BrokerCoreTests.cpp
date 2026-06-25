@@ -1,5 +1,6 @@
 #include "../include/BrokerCore.h"
 #include "../include/RecordManager.h"
+#include "gtest/gtest.h"
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -162,9 +163,19 @@ void TestMtFetcher::fetch_loop() {
     fetched_records_.push_back(records);
 }
 
-class BrokerCoreTests : public ::testing::Test {
-  private:
-    std::filesystem::path dir_;
+struct MtAppendStFetchParam {
+    size_t record_len;
+    unsigned int no_of_records, no_of_appending_threads;
+    uint64_t segment_size;
+};
+struct MtAppendMtFetchParam {
+    size_t record_len;
+    unsigned int no_of_records, no_of_appending_threads, no_of_reading_threads;
+    uint64_t segment_size;
+};
+
+class MtAppendStFetchTests
+    : public ::testing::TestWithParam<MtAppendStFetchParam> {
 
   public:
     std::vector<std::queue<Record>>
@@ -183,22 +194,49 @@ class BrokerCoreTests : public ::testing::Test {
     }
 
   protected:
-    std::unique_ptr<BrokerCore> core_;
     void SetUp() override {
-        dir_ = std::filesystem::current_path() / "Core";
-        std::filesystem::remove_all(dir_);
-        core_ = std::make_unique<BrokerCore>(dir_, 2048);
-        core_->start();
-    }
-    void TearDown() override {
-        core_->stop();
+        dir_ = std::filesystem::current_path() / "CoreMtAppendStFetch";
         std::filesystem::remove_all(dir_);
     }
+    void TearDown() override { std::filesystem::remove_all(dir_); }
+    std::filesystem::path dir_;
 };
 
-TEST_F(BrokerCoreTests, MtAppendReadResultAfter) {
-    auto append_queue = generate_records(500, 1000, 4);
-    auto appender = std::make_shared<TestMtAppender>(core_);
+class MtAppendMtFetchTests
+    : public ::testing::TestWithParam<MtAppendMtFetchParam> {
+
+  public:
+    std::vector<std::queue<Record>>
+    generate_records(size_t record_len, unsigned int no_of_records,
+                     unsigned int no_of_threads) {
+        std::vector<std::queue<Record>> records(no_of_threads);
+        for (unsigned int i = 0; i < no_of_records; ++i) {
+            std::vector<uint8_t> payload;
+            for (unsigned int j = i; j < i + record_len; ++j) {
+                payload.push_back(j % 256);
+            }
+            records[i % no_of_threads].push(
+                RecordManager::create_record(payload));
+        }
+        return records;
+    }
+
+  protected:
+    void SetUp() override {
+        dir_ = std::filesystem::current_path() / "CoreMtAppendMtFetch";
+        std::filesystem::remove_all(dir_);
+    }
+    void TearDown() override { std::filesystem::remove_all(dir_); }
+    std::filesystem::path dir_;
+};
+
+TEST_P(MtAppendStFetchTests, MtAppendReadResultAfter) {
+    auto param = GetParam();
+    auto core = std::make_unique<BrokerCore>(dir_, param.segment_size);
+    core->start();
+    auto append_queue = generate_records(param.record_len, param.no_of_records,
+                                         param.no_of_appending_threads);
+    auto appender = std::make_shared<TestMtAppender>(core);
     appender->set_append_queue(append_queue);
     appender->start();
     while (appender.use_count() > 1) {
@@ -212,10 +250,10 @@ TEST_F(BrokerCoreTests, MtAppendReadResultAfter) {
         EXPECT_TRUE((it - 1)->offset < it->offset);
     }
     std::vector<uint8_t> result_buf;
-    core_->submit_fetch({.offset = 0, .max_bytes = 1000000},
-                        [&](const FetchResult &result, std::error_code ec) {
-                            result_buf = result.result_buf;
-                        });
+    core->submit_fetch({.offset = 0, .max_bytes = 1000000},
+                       [&](const FetchResult &result, std::error_code ec) {
+                           result_buf = result.result_buf;
+                       });
     auto fetched_records = RecordManager::extract_records(result_buf);
 
     ASSERT_EQ(appended_records.size(), fetched_records.size());
@@ -226,13 +264,18 @@ TEST_F(BrokerCoreTests, MtAppendReadResultAfter) {
         EXPECT_EQ(it->record.payload,
                   fetched_records[it - appended_records.begin()].payload);
     }
+    core->stop();
 }
 
-TEST_F(BrokerCoreTests, MtAppendMtFetchDuring) {
-    unsigned int no_of_records = 1000;
-    auto fetcher = std::make_shared<TestMtFetcher>(core_, 8, no_of_records);
-    auto append_queue = generate_records(100, no_of_records, 4);
-    auto appender = std::make_shared<TestMtAppender>(core_);
+TEST_P(MtAppendMtFetchTests, MtAppendMtFetchDuring) {
+    auto param = GetParam();
+    auto core = std::make_unique<BrokerCore>(dir_, param.segment_size);
+    core->start();
+    auto fetcher = std::make_shared<TestMtFetcher>(
+        core, param.no_of_reading_threads, param.no_of_records);
+    auto append_queue = generate_records(100, param.no_of_records,
+                                         param.no_of_appending_threads);
+    auto appender = std::make_shared<TestMtAppender>(core);
     appender->set_append_queue(append_queue);
     fetcher->start();
     appender->start();
@@ -241,24 +284,42 @@ TEST_F(BrokerCoreTests, MtAppendMtFetchDuring) {
     }
     auto appended_records = appender->get_appended_records();
 
-    ASSERT_EQ(appended_records.size(), no_of_records);
+    ASSERT_EQ(appended_records.size(), param.no_of_records);
     for (auto it = appended_records.begin() + 1; it != appended_records.end();
          ++it) {
         EXPECT_TRUE((it - 1)->offset < it->offset);
     }
     fetcher->wait();
     auto fetched_records = fetcher->get_fetched_records();
-    ASSERT_EQ(appended_records.size(), no_of_records);
+    ASSERT_EQ(appended_records.size(), param.no_of_records);
     for (auto &records : fetched_records) {
-        ASSERT_EQ(records.size(), no_of_records);
+        ASSERT_EQ(records.size(), param.no_of_records);
         for (auto it = records.begin(); it != records.end(); ++it) {
             EXPECT_EQ(it->payload,
                       appended_records[it - records.begin()].record.payload)
                 << it - records.begin();
         }
     }
+    core->stop();
 }
 
+/* struct MtAppendStFetchParam {
+    size_t record_len;
+    unsigned int no_of_records, no_of_appending_threads;
+    uint64_t segment_size;
+};
+struct MtAppendMtFetchParam {
+    size_t record_len;
+    unsigned int no_of_records, no_of_appending_threads, no_of_reading_threads;
+    uint64_t segment_size;
+}; */
+
+INSTANTIATE_TEST_SUITE_P(BrokerCore, MtAppendStFetchTests,
+                         testing::Values((MtAppendStFetchParam{500, 1000, 4,
+                                                               2048})));
+INSTANTIATE_TEST_SUITE_P(BrokerCore, MtAppendMtFetchTests,
+                         testing::Values((MtAppendMtFetchParam{100, 1000, 4, 8,
+                                                               2048})));
 /*
 1. Multithreaded appends (with and without rollover)
     1. n threads appending
