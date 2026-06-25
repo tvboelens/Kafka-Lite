@@ -18,7 +18,7 @@ namespace broker {
 class TestServer {
   public:
     TestServer()
-        : server_(49153, std::make_unique<FakeBrokerCore>(), io_context_) {}
+        : server_(0, std::make_unique<FakeBrokerCore>(), io_context_) {}
     void start() {
         io_context_thread = std::thread([this]() { io_context_.run(); });
     };

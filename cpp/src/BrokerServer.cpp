@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <iostream>
 #include <memory>
 #include <system_error>
 #include <variant>
@@ -209,6 +210,9 @@ BrokerServer::BrokerServer(unsigned int port,
     : port_(port), status_(BrokerServerStatus::Starting),
       core_(std::move(core)), iocontext_(io_context),
       tcp_acceptor_(iocontext_, tcp::endpoint(tcp::v4(), port_)) {
+    if (port_ == 0)
+        port_ = tcp_acceptor_.local_endpoint().port();
+    std::cout << "listening on port " << port_ << std::endl;
     core_->start();
     status_ = BrokerServerStatus::Active;
     startAccept();

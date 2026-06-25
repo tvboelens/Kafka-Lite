@@ -24,7 +24,7 @@ int main() {
     auto dir = std::filesystem::current_path() / "BrokerDir";
     std::unique_ptr<BrokerCoreIfc> core =
         std::make_unique<BrokerCore>(dir, 16 * 1024);
-    unsigned int port = 49153;
+    unsigned int port = 0;
     boost::asio::io_context io_context;
     kafka_lite::broker::BrokerServer server(port, std ::move(core), io_context);
     boost::asio::signal_set signals(io_context, SIGINT, SIGTERM);
