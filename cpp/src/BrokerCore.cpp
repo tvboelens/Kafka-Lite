@@ -31,7 +31,7 @@ void BrokerCore::stop() {
     if (writer_thread.joinable())
         writer_thread.join();
     while (fetch_calls_counter_.load(std::memory_order_acquire) > 0)
-        std::this_thread::sleep_for(50ms);
+        std::this_thread::sleep_for(10ms);
     status_ = BrokerCoreStatus::Stopped;
 }
 
